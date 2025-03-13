@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "mac-shell": {
+      "command": "node",
+      "args": ["/path/to/mac-shell-mcp/build/index.js"],
+      "disabled": false,
+      "alwaysAllow": []
+    }
+  }
+}
