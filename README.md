@@ -45,7 +45,9 @@ node build/index.js
 
 Both Roo Code and Claude Desktop use a similar configuration format for MCP servers. Here's how to set up the Mac Shell MCP server:
 
-#### Roo Code Configuration
+#### Using Local Installation
+
+##### Roo Code Configuration
 
 Add the following to your Roo Code MCP settings configuration file (located at `~/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json`):
 
@@ -60,7 +62,7 @@ Add the following to your Roo Code MCP settings configuration file (located at `
 }
 ```
 
-#### Claude Desktop Configuration
+##### Claude Desktop Configuration
 
 Add the following to your Claude Desktop configuration file (located at `~/Library/Application Support/Claude/claude_desktop_config.json`):
 
@@ -76,6 +78,48 @@ Add the following to your Claude Desktop configuration file (located at `~/Libra
 ```
 
 Replace `/path/to/mac-shell-mcp` with the actual path where you cloned the repository.
+
+#### Using NPX (Recommended)
+
+For a more convenient setup that doesn't require keeping a terminal window open, you can publish the package to npm and use it with npx:
+
+##### Publishing to npm
+
+1. Update the package.json with your details
+2. Publish to npm:
+   ```bash
+   npm publish
+   ```
+
+##### Roo Code Configuration
+
+```json
+"mac-shell": {
+  "command": "npx",
+  "args": [
+    "-y",
+    "mac-shell-mcp"
+  ],
+  "alwaysAllow": [],
+  "disabled": false
+}
+```
+
+##### Claude Desktop Configuration
+
+```json
+"mac-shell": {
+  "command": "npx",
+  "args": [
+    "-y",
+    "mac-shell-mcp"
+  ],
+  "alwaysAllow": false,
+  "disabled": false
+}
+```
+
+This approach allows the MCP server to be started automatically by the MCP client without requiring a separate terminal window or manual intervention.
 
 > **Note**:
 > - For Roo Code: Setting `alwaysAllow` to an empty array `[]` is recommended for security reasons, as it will prompt for approval before executing any commands. If you want to allow specific commands without prompting, you can add their names to the array, for example: `"alwaysAllow": ["execute_command", "get_whitelist"]`.
