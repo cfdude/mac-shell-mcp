@@ -17,7 +17,7 @@ An MCP (Model Context Protocol) server for executing macOS terminal commands wit
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/mac-shell-mcp.git
+git clone https://github.com/cfdude/mac-shell-mcp.git
 cd mac-shell-mcp
 
 # Install dependencies
@@ -41,14 +41,47 @@ Or directly:
 node build/index.js
 ```
 
-### Connecting to Claude Desktop
+### Configuring in Roo Code and Claude Desktop
 
-1. Open Claude Desktop settings
-2. Navigate to MCP settings
-3. Add a new MCP server with the following configuration:
-   - Name: Mac Shell
-   - Command: `node /path/to/mac-shell-mcp/build/index.js`
-4. Save and restart Claude Desktop
+Both Roo Code and Claude Desktop use a similar configuration format for MCP servers. Here's how to set up the Mac Shell MCP server:
+
+#### Roo Code Configuration
+
+Add the following to your Roo Code MCP settings configuration file (located at `~/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json`):
+
+```json
+"mac-shell": {
+  "command": "node",
+  "args": [
+    "/path/to/mac-shell-mcp/build/index.js"
+  ],
+  "alwaysAllow": [],
+  "disabled": false
+}
+```
+
+#### Claude Desktop Configuration
+
+Add the following to your Claude Desktop configuration file (located at `~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+```json
+"mac-shell": {
+  "command": "node",
+  "args": [
+    "/path/to/mac-shell-mcp/build/index.js"
+  ],
+  "alwaysAllow": false,
+  "disabled": false
+}
+```
+
+Replace `/path/to/mac-shell-mcp` with the actual path where you cloned the repository.
+
+> **Note**:
+> - For Roo Code: Setting `alwaysAllow` to an empty array `[]` is recommended for security reasons, as it will prompt for approval before executing any commands. If you want to allow specific commands without prompting, you can add their names to the array, for example: `"alwaysAllow": ["execute_command", "get_whitelist"]`.
+> - For Claude Desktop: Setting `alwaysAllow` to `false` is recommended for security reasons. Claude Desktop uses a boolean value instead of an array, where `false` means all commands require approval and `true` means all commands are allowed without prompting.
+>
+> **Important**: The `alwaysAllow` parameter is processed by the MCP client (Roo Code or Claude Desktop), not by the Mac Shell MCP server itself. The server will work correctly with either format, as the client handles the approval process before sending requests to the server.
 
 ### Available Tools
 
@@ -181,6 +214,86 @@ You can extend the whitelist by using the `add_to_whitelist` tool. For example:
   "command": "npm",
   "securityLevel": "requires_approval",
   "description": "Node.js package manager"
+}
+```
+
+## Using as an npm Package
+
+To use the Mac Shell MCP server with `npx` similar to other MCP servers like Brave Search, you can publish it to npm or use it directly from GitHub.
+
+### Configuration with npx
+
+Add the following to your MCP settings configuration:
+
+#### Roo Code
+```json
+"mac-shell": {
+  "command": "npx",
+  "args": [
+    "-y",
+    "github:cfdude/mac-shell-mcp"
+  ],
+  "alwaysAllow": [],
+  "disabled": false
+}
+```
+
+#### Claude Desktop
+```json
+"mac-shell": {
+  "command": "npx",
+  "args": [
+    "-y",
+    "github:cfdude/mac-shell-mcp"
+  ],
+  "alwaysAllow": false,
+  "disabled": false
+}
+```
+
+This will automatically download and run the server without requiring a manual clone and build process.
+
+### Publishing to npm
+
+If you want to publish your own version to npm:
+
+1. Update the package.json with your details
+2. Add a "bin" field to package.json:
+   ```json
+   "bin": {
+     "mac-shell-mcp": "./build/index.js"
+   }
+   ```
+3. Publish to npm:
+   ```bash
+   npm publish
+   ```
+
+Then you can use it in your MCP configuration:
+
+#### Roo Code
+```json
+"mac-shell": {
+  "command": "npx",
+  "args": [
+    "-y",
+    "mac-shell-mcp"
+  ],
+  "alwaysAllow": [],
+  "disabled": false
+}
+```
+
+#### Claude Desktop
+```json
+"mac-shell": {
+  "command": "npx",
+  "args": [
+    "-y",
+    "mac-shell-mcp"
+  ],
+  "alwaysAllow": false,
+  "disabled": false
 }
 ```
 

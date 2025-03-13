@@ -1,9 +1,12 @@
 {
   "name": "mac-shell-mcp",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "MCP server for executing macOS terminal commands with ZSH",
   "type": "module",
   "main": "build/index.js",
+  "bin": {
+    "mac-shell-mcp": "./build/index.js"
+  },
   "scripts": {
     "build": "tsc && chmod +x build/index.js",
     "start": "node build/index.js",
