@@ -2,6 +2,10 @@
 
 An MCP (Model Context Protocol) server for executing macOS terminal commands with ZSH shell. This server provides a secure way to execute shell commands with built-in whitelisting and approval mechanisms.
 
+<a href="https://glama.ai/mcp/servers/@cfdude/mac-shell-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@cfdude/mac-shell-mcp/badge" alt="Mac Shell Server MCP server" />
+</a>
+
 ## Features
 
 - Execute macOS terminal commands through MCP
