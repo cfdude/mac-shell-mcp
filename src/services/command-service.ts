@@ -14,7 +14,7 @@ export enum CommandSecurityLevel {
   /** Commands that require approval before execution */
   REQUIRES_APPROVAL = 'requires_approval',
   /** Commands that are explicitly forbidden */
-  FORBIDDEN = 'forbidden'
+  FORBIDDEN = 'forbidden',
 }
 
 /**
@@ -99,53 +99,53 @@ export class CommandService extends EventEmitter {
       {
         command: 'ls',
         securityLevel: CommandSecurityLevel.SAFE,
-        description: 'List directory contents'
+        description: 'List directory contents',
       },
       {
         command: 'pwd',
         securityLevel: CommandSecurityLevel.SAFE,
-        description: 'Print working directory'
+        description: 'Print working directory',
       },
       {
         command: 'echo',
         securityLevel: CommandSecurityLevel.SAFE,
-        description: 'Print text to standard output'
+        description: 'Print text to standard output',
       },
       {
         command: 'cat',
         securityLevel: CommandSecurityLevel.SAFE,
-        description: 'Concatenate and print files'
+        description: 'Concatenate and print files',
       },
       {
         command: 'grep',
         securityLevel: CommandSecurityLevel.SAFE,
-        description: 'Search for patterns in files'
+        description: 'Search for patterns in files',
       },
       {
         command: 'find',
         securityLevel: CommandSecurityLevel.SAFE,
-        description: 'Find files in a directory hierarchy'
+        description: 'Find files in a directory hierarchy',
       },
       {
         command: 'cd',
         securityLevel: CommandSecurityLevel.SAFE,
-        description: 'Change directory'
+        description: 'Change directory',
       },
       {
         command: 'head',
         securityLevel: CommandSecurityLevel.SAFE,
-        description: 'Output the first part of files'
+        description: 'Output the first part of files',
       },
       {
         command: 'tail',
         securityLevel: CommandSecurityLevel.SAFE,
-        description: 'Output the last part of files'
+        description: 'Output the last part of files',
       },
       {
         command: 'wc',
         securityLevel: CommandSecurityLevel.SAFE,
-        description: 'Print newline, word, and byte counts'
-      }
+        description: 'Print newline, word, and byte counts',
+      },
     ];
 
     // Commands requiring approval
@@ -153,33 +153,33 @@ export class CommandService extends EventEmitter {
       {
         command: 'mv',
         securityLevel: CommandSecurityLevel.REQUIRES_APPROVAL,
-        description: 'Move (rename) files'
+        description: 'Move (rename) files',
       },
       {
         command: 'cp',
         securityLevel: CommandSecurityLevel.REQUIRES_APPROVAL,
-        description: 'Copy files and directories'
+        description: 'Copy files and directories',
       },
       {
         command: 'mkdir',
         securityLevel: CommandSecurityLevel.REQUIRES_APPROVAL,
-        description: 'Create directories'
+        description: 'Create directories',
       },
       {
         command: 'touch',
         securityLevel: CommandSecurityLevel.REQUIRES_APPROVAL,
-        description: 'Change file timestamps or create empty files'
+        description: 'Change file timestamps or create empty files',
       },
       {
         command: 'chmod',
         securityLevel: CommandSecurityLevel.REQUIRES_APPROVAL,
-        description: 'Change file mode bits'
+        description: 'Change file mode bits',
       },
       {
         command: 'chown',
         securityLevel: CommandSecurityLevel.REQUIRES_APPROVAL,
-        description: 'Change file owner and group'
-      }
+        description: 'Change file owner and group',
+      },
     ];
 
     // Forbidden commands
@@ -187,17 +187,17 @@ export class CommandService extends EventEmitter {
       {
         command: 'rm',
         securityLevel: CommandSecurityLevel.FORBIDDEN,
-        description: 'Remove files or directories'
+        description: 'Remove files or directories',
       },
       {
         command: 'sudo',
         securityLevel: CommandSecurityLevel.FORBIDDEN,
-        description: 'Execute a command as another user'
-      }
+        description: 'Execute a command as another user',
+      },
     ];
 
     // Add all commands to the whitelist
-    [...safeCommands, ...approvalCommands, ...forbiddenCommands].forEach(entry => {
+    [...safeCommands, ...approvalCommands, ...forbiddenCommands].forEach((entry) => {
       this.whitelist.set(entry.command, entry);
     });
   }
@@ -256,7 +256,7 @@ export class CommandService extends EventEmitter {
   private validateCommand(command: string, args: string[]): CommandSecurityLevel | null {
     // Extract the base command (without path)
     const baseCommand = command.split('/').pop() || command;
-    
+
     // Check if the command is in the whitelist
     const entry = this.whitelist.get(baseCommand);
     if (!entry) {
@@ -311,7 +311,7 @@ export class CommandService extends EventEmitter {
     options: {
       timeout?: number;
       requestedBy?: string;
-    } = {}
+    } = {},
   ): Promise<CommandResult> {
     const securityLevel = this.validateCommand(command, args);
 
@@ -335,7 +335,7 @@ export class CommandService extends EventEmitter {
       const timeout = options.timeout || this.defaultTimeout;
       const { stdout, stderr } = await execFileAsync(command, args, {
         timeout,
-        shell: this.shell
+        shell: this.shell,
       });
 
       return { stdout, stderr };
@@ -357,7 +357,7 @@ export class CommandService extends EventEmitter {
   private queueCommandForApproval(
     command: string,
     args: string[] = [],
-    requestedBy?: string
+    requestedBy?: string,
   ): Promise<CommandResult> {
     return new Promise((resolve, reject) => {
       const id = randomUUID();
@@ -368,11 +368,11 @@ export class CommandService extends EventEmitter {
         requestedAt: new Date(),
         requestedBy,
         resolve: (result: CommandResult) => resolve(result),
-        reject: (error: Error) => reject(error)
+        reject: (error: Error) => reject(error),
       };
 
       this.pendingCommands.set(id, pendingCommand);
-      
+
       // Emit event for pending command
       this.emit('command:pending', pendingCommand);
     });
@@ -390,35 +390,33 @@ export class CommandService extends EventEmitter {
     }
 
     try {
-      const { stdout, stderr } = await execFileAsync(
-        pendingCommand.command,
-        pendingCommand.args,
-        { shell: this.shell }
-      );
+      const { stdout, stderr } = await execFileAsync(pendingCommand.command, pendingCommand.args, {
+        shell: this.shell,
+      });
 
       // Remove from pending queue
       this.pendingCommands.delete(commandId);
-      
+
       // Emit event for approved command
       this.emit('command:approved', { commandId, stdout, stderr });
-      
+
       // Resolve the original promise
       pendingCommand.resolve({ stdout, stderr });
-      
+
       return { stdout, stderr };
     } catch (error) {
       // Remove from pending queue
       this.pendingCommands.delete(commandId);
-      
+
       // Emit event for failed command
       this.emit('command:failed', { commandId, error });
-      
+
       if (error instanceof Error) {
         // Reject the original promise
         pendingCommand.reject(error);
         throw error;
       }
-      
+
       const genericError = new Error('Command execution failed');
       pendingCommand.reject(genericError);
       throw genericError;
@@ -438,10 +436,10 @@ export class CommandService extends EventEmitter {
 
     // Remove from pending queue
     this.pendingCommands.delete(commandId);
-    
+
     // Emit event for denied command
     this.emit('command:denied', { commandId, reason });
-    
+
     // Reject the original promise
     pendingCommand.reject(new Error(reason));
   }

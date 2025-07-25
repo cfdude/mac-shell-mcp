@@ -15,7 +15,12 @@
     "prepare": "npm run build",
     "start": "node build/index.js",
     "dev": "ts-node --esm src/index.ts",
-    "test": "jest"
+    "test": "jest",
+    "lint": "eslint 'src/**/*.ts'",
+    "lint:fix": "eslint 'src/**/*.ts' --fix",
+    "format": "prettier --write 'src/**/*.ts' 'tests/**/*.js'",
+    "format:check": "prettier --check 'src/**/*.ts' 'tests/**/*.js'",
+    "lint-and-format": "npm run lint:fix && npm run format"
   },
   "keywords": [
     "mcp",
@@ -24,8 +29,19 @@
     "zsh",
     "terminal"
   ],
-  "author": "",
+  "author": "Rob Sherman",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cfdude/mac-shell-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cfdude/mac-shell-mcp/issues"
+  },
+  "homepage": "https://github.com/cfdude/mac-shell-mcp#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.6.1",
     "zod": "^3.22.4"
@@ -33,7 +49,13 @@
   "devDependencies": {
     "@types/jest": "^29.5.11",
     "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^8.38.0",
+    "@typescript-eslint/parser": "^8.38.0",
+    "eslint": "^9.32.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.3",
     "jest": "^29.7.0",
+    "prettier": "^3.6.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   }

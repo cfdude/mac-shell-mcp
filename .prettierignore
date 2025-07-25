@@ -1,0 +1,10 @@
+node_modules/
+build/
+dist/
+coverage/
+*.min.js
+*.min.css
+package-lock.json
+.git/
+.vscode/
+.idea/

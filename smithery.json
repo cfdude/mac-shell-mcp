@@ -1,0 +1,151 @@
+{
+  "name": "mac-shell-mcp",
+  "description": "An MCP server for executing macOS terminal commands with ZSH shell, featuring secure command whitelisting and approval mechanisms",
+  "author": "Rob Sherman",
+  "license": "MIT",
+  "repository": "https://github.com/cfdude/mac-shell-mcp",
+  "homepage": "https://github.com/cfdude/mac-shell-mcp#readme",
+  "version": "1.0.4",
+  "categories": ["productivity", "automation", "terminal", "macos"],
+  "keywords": ["mcp", "shell", "macos", "zsh", "terminal", "command-line", "automation"],
+  "requirements": {
+    "node": ">=18.0.0",
+    "platform": ["darwin"]
+  },
+  "installation": {
+    "type": "npm",
+    "package": "mac-shell-mcp"
+  },
+  "configuration": {
+    "claude": {
+      "command": "npx",
+      "args": ["-y", "mac-shell-mcp"],
+      "alwaysAllow": false
+    },
+    "roo": {
+      "command": "npx",
+      "args": ["-y", "mac-shell-mcp"],
+      "alwaysAllow": []
+    }
+  },
+  "tools": [
+    {
+      "name": "execute_command",
+      "description": "Execute a shell command on macOS",
+      "parameters": {
+        "command": {
+          "type": "string",
+          "description": "The command to execute",
+          "required": true
+        },
+        "args": {
+          "type": "array",
+          "description": "Command arguments",
+          "required": false
+        }
+      }
+    },
+    {
+      "name": "get_whitelist",
+      "description": "Get the list of whitelisted commands",
+      "parameters": {}
+    },
+    {
+      "name": "add_to_whitelist",
+      "description": "Add a command to the whitelist",
+      "parameters": {
+        "command": {
+          "type": "string",
+          "description": "The command to whitelist",
+          "required": true
+        },
+        "securityLevel": {
+          "type": "string",
+          "description": "Security level: safe, requires_approval, or forbidden",
+          "required": true
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of the command",
+          "required": false
+        }
+      }
+    },
+    {
+      "name": "update_security_level",
+      "description": "Update the security level of a whitelisted command",
+      "parameters": {
+        "command": {
+          "type": "string",
+          "description": "The command to update",
+          "required": true
+        },
+        "securityLevel": {
+          "type": "string",
+          "description": "New security level",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "remove_from_whitelist",
+      "description": "Remove a command from the whitelist",
+      "parameters": {
+        "command": {
+          "type": "string",
+          "description": "The command to remove",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "get_pending_commands",
+      "description": "Get the list of commands pending approval",
+      "parameters": {}
+    },
+    {
+      "name": "approve_command",
+      "description": "Approve a pending command",
+      "parameters": {
+        "commandId": {
+          "type": "string",
+          "description": "The ID of the command to approve",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "deny_command",
+      "description": "Deny a pending command",
+      "parameters": {
+        "commandId": {
+          "type": "string",
+          "description": "The ID of the command to deny",
+          "required": true
+        },
+        "reason": {
+          "type": "string",
+          "description": "Reason for denial",
+          "required": false
+        }
+      }
+    }
+  ],
+  "environment": {
+    "MAC_SHELL_SAFE_MODE": {
+      "type": "boolean",
+      "description": "Enable safe mode (restrict to safe commands only)",
+      "default": false
+    },
+    "MAC_SHELL_LOG_LEVEL": {
+      "type": "string",
+      "description": "Logging level (debug, info, warn, error)",
+      "default": "info"
+    },
+    "MAC_SHELL_APPROVAL_TIMEOUT": {
+      "type": "number",
+      "description": "Timeout for command approval in seconds",
+      "default": 300
+    }
+  }
+}

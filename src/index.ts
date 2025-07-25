@@ -33,7 +33,7 @@ class MacShellMcpServer {
         capabilities: {
           tools: {},
         },
-      }
+      },
     );
 
     // Set up event handlers for command service
@@ -41,7 +41,7 @@ class MacShellMcpServer {
 
     // Set up MCP request handlers
     this.setupRequestHandlers();
-    
+
     // Error handling
     this.server.onerror = (error) => console.error('[MCP Error]', error);
     process.on('SIGINT', async () => {
@@ -55,7 +55,9 @@ class MacShellMcpServer {
    */
   private setupCommandServiceEvents(): void {
     this.commandService.on('command:pending', (pendingCommand) => {
-      console.error(`[Pending Command] ID: ${pendingCommand.id}, Command: ${pendingCommand.command} ${pendingCommand.args.join(' ')}`);
+      console.error(
+        `[Pending Command] ID: ${pendingCommand.id}, Command: ${pendingCommand.command} ${pendingCommand.args.join(' ')}`,
+      );
       this.pendingApprovals.set(pendingCommand.id, {
         command: pendingCommand.command,
         args: pendingCommand.args,
@@ -236,16 +238,13 @@ class MacShellMcpServer {
           case 'deny_command':
             return await this.handleDenyCommand(args);
           default:
-            throw new McpError(
-              ErrorCode.MethodNotFound,
-              `Unknown tool: ${name}`
-            );
+            throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
         }
       } catch (error) {
         if (error instanceof McpError) {
           throw error;
         }
-        
+
         if (error instanceof Error) {
           return {
             content: [
@@ -257,11 +256,8 @@ class MacShellMcpServer {
             isError: true,
           };
         }
-        
-        throw new McpError(
-          ErrorCode.InternalError,
-          'An unexpected error occurred'
-        );
+
+        throw new McpError(ErrorCode.InternalError, 'An unexpected error occurred');
       }
     });
   }
@@ -269,7 +265,7 @@ class MacShellMcpServer {
   /**
    * Handle execute_command tool
    */
-  private async handleExecuteCommand(args: any) {
+  private async handleExecuteCommand(args: unknown) {
     const schema = z.object({
       command: z.string(),
       args: z.array(z.string()).optional(),
@@ -279,7 +275,7 @@ class MacShellMcpServer {
 
     try {
       const result = await this.commandService.executeCommand(command, commandArgs);
-      
+
       return {
         content: [
           {
@@ -313,7 +309,7 @@ class MacShellMcpServer {
    */
   private async handleGetWhitelist() {
     const whitelist = this.commandService.getWhitelist();
-    
+
     return {
       content: [
         {
@@ -327,7 +323,7 @@ class MacShellMcpServer {
   /**
    * Handle add_to_whitelist tool
    */
-  private async handleAddToWhitelist(args: any) {
+  private async handleAddToWhitelist(args: unknown) {
     const schema = z.object({
       command: z.string(),
       securityLevel: z.enum(['safe', 'requires_approval', 'forbidden']),
@@ -337,11 +333,12 @@ class MacShellMcpServer {
     const { command, securityLevel, description } = schema.parse(args);
 
     // Map string security level to enum
-    const securityLevelEnum = securityLevel === 'safe'
-      ? CommandSecurityLevel.SAFE
-      : securityLevel === 'requires_approval'
-        ? CommandSecurityLevel.REQUIRES_APPROVAL
-        : CommandSecurityLevel.FORBIDDEN;
+    const securityLevelEnum =
+      securityLevel === 'safe'
+        ? CommandSecurityLevel.SAFE
+        : securityLevel === 'requires_approval'
+          ? CommandSecurityLevel.REQUIRES_APPROVAL
+          : CommandSecurityLevel.FORBIDDEN;
 
     this.commandService.addToWhitelist({
       command,
@@ -362,7 +359,7 @@ class MacShellMcpServer {
   /**
    * Handle update_security_level tool
    */
-  private async handleUpdateSecurityLevel(args: any) {
+  private async handleUpdateSecurityLevel(args: unknown) {
     const schema = z.object({
       command: z.string(),
       securityLevel: z.enum(['safe', 'requires_approval', 'forbidden']),
@@ -371,11 +368,12 @@ class MacShellMcpServer {
     const { command, securityLevel } = schema.parse(args);
 
     // Map string security level to enum
-    const securityLevelEnum = securityLevel === 'safe'
-      ? CommandSecurityLevel.SAFE
-      : securityLevel === 'requires_approval'
-        ? CommandSecurityLevel.REQUIRES_APPROVAL
-        : CommandSecurityLevel.FORBIDDEN;
+    const securityLevelEnum =
+      securityLevel === 'safe'
+        ? CommandSecurityLevel.SAFE
+        : securityLevel === 'requires_approval'
+          ? CommandSecurityLevel.REQUIRES_APPROVAL
+          : CommandSecurityLevel.FORBIDDEN;
 
     this.commandService.updateSecurityLevel(command, securityLevelEnum);
 
@@ -392,7 +390,7 @@ class MacShellMcpServer {
   /**
    * Handle remove_from_whitelist tool
    */
-  private async handleRemoveFromWhitelist(args: any) {
+  private async handleRemoveFromWhitelist(args: unknown) {
     const schema = z.object({
       command: z.string(),
     });
@@ -416,18 +414,22 @@ class MacShellMcpServer {
    */
   private async handleGetPendingCommands() {
     const pendingCommands = this.commandService.getPendingCommands();
-    
+
     return {
       content: [
         {
           type: 'text',
-          text: JSON.stringify(pendingCommands.map(cmd => ({
-            id: cmd.id,
-            command: cmd.command,
-            args: cmd.args,
-            requestedAt: cmd.requestedAt,
-            requestedBy: cmd.requestedBy,
-          })), null, 2),
+          text: JSON.stringify(
+            pendingCommands.map((cmd) => ({
+              id: cmd.id,
+              command: cmd.command,
+              args: cmd.args,
+              requestedAt: cmd.requestedAt,
+              requestedBy: cmd.requestedBy,
+            })),
+            null,
+            2,
+          ),
         },
       ],
     };
@@ -436,7 +438,7 @@ class MacShellMcpServer {
   /**
    * Handle approve_command tool
    */
-  private async handleApproveCommand(args: any) {
+  private async handleApproveCommand(args: unknown) {
     const schema = z.object({
       commandId: z.string(),
     });
@@ -445,7 +447,7 @@ class MacShellMcpServer {
 
     try {
       const result = await this.commandService.approveCommand(commandId);
-      
+
       return {
         content: [
           {
@@ -477,7 +479,7 @@ class MacShellMcpServer {
   /**
    * Handle deny_command tool
    */
-  private async handleDenyCommand(args: any) {
+  private async handleDenyCommand(args: unknown) {
     const schema = z.object({
       commandId: z.string(),
       reason: z.string().optional(),
@@ -487,7 +489,7 @@ class MacShellMcpServer {
 
     try {
       this.commandService.denyCommand(commandId, reason);
-      
+
       return {
         content: [
           {
