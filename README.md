@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/cfdude-mac-shell-mcp-badge.png)](https://mseep.ai/app/cfdude-mac-shell-mcp)
+
 # Mac Shell MCP Server
 
 An MCP (Model Context Protocol) server for executing macOS terminal commands with ZSH shell. This server provides a secure way to execute shell commands with built-in whitelisting and approval mechanisms.
