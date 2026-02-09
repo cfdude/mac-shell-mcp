@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main ]
 
+
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: macos-latest
@@ -15,10 +19,10 @@ jobs:
         node-version: [18.x, 20.x, 22.x]
     
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
     
     - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
       with:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
@@ -39,10 +43,10 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
     
     - name: Use Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
       with:
         node-version: '20.x'
         cache: 'npm'
@@ -57,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
     
     - name: Run security audit
       run: npm audit --production
