@@ -124,16 +124,26 @@ Removing the approval trio also disposes of two latent defects: `queueCommandFor
 promise that never times out (leak + permanently hung agent), and `approveCommand` re-executes
 without re-validating the whitelist.
 
-| Tool | Annotation | Purpose |
-|---|---|---|
-| `execute_command` | `readOnlyHint: true` | Everything resolves **inside** roots, non-delete. Safe to set always-allow. |
-| `execute_external_command` | `destructiveHint: true` | Anything reaching outside roots, or deleting. Set always-ask. |
-| `execute_pipeline` | `readOnlyHint: true` | stdout→stdin in-process, replacing `\|`. |
-| `get_policy` | `readOnlyHint: true` | Agent discovers what's permitted without guessing. |
-| `suggest_policy_config` | `readOnlyHint: true` | §7. |
+| Tool | `readOnly` | `destructive` | `openWorld` | Purpose |
+|---|---|---|---|---|
+| `execute_command` | `false` | `false` | **`false`** | Reads **and writes**, everything resolved **inside** roots, non-delete. Safe to set always-allow. |
+| `execute_external_command` | `false` | **`true`** | **`true`** | Anything reaching outside roots, or deleting. Set always-ask. |
+| `execute_pipeline` | **`true`** | `false` | `false` | stdout→stdin in-process, replacing `\|`. Stages restricted to read-effect commands (§4.1). |
+| `get_policy` | **`true`** | `false` | `false` | Agent discovers what's permitted without guessing. |
+| `suggest_policy_config` | **`true`** | `false` | `false` | §7. |
 
 Annotations (`readOnlyHint` / `destructiveHint` / `idempotentHint` / `openWorldHint`) are supported
 in SDK 1.26 and used by clients to shape approval UI. The current server sets none.
+
+**The load-bearing annotation is `openWorldHint`, not `readOnlyHint`.** The human-meaningful
+distinction in this design is *confinement*, not read-vs-write: `mkdir ./build` inside a chosen root
+is unremarkable, while *reading* `~/.aws/credentials` is not. So `execute_command` is annotated
+`readOnlyHint: false` — it genuinely writes — and earns always-allow through
+`openWorldHint: false` instead. Annotating it `readOnlyHint: true` would be a false claim to the
+client, and the design depends on these hints being truthful.
+
+`execute_pipeline` is the one execution tool that is honestly `readOnlyHint: true`, because its
+stages are restricted to read-effect commands — which is also what stops it being a laundering path.
 
 ### 4.1 The constraint that makes the split real
 
