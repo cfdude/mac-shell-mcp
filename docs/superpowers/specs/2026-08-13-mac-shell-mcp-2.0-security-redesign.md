@@ -178,11 +178,101 @@ Today it downgrades to `REQUIRES_APPROVAL`, which under the current design is a 
 
 ## 5. Configuration
 
-Claude Desktop has **no ambient working directory** — it launches the server as a bare process with
-no project context. There is no "current repo" to infer, so roots must be explicitly configured.
+**The config file is canonical. The MCPB manifest is one delivery mechanism, not the model.** An
+earlier draft of this spec treated the file as a fallback; that was wrong. Smithery, Docker, Claude
+Code, and any custom host have no manifest and no config form, so a design that depends on
+`user_config` has no configuration story at all outside Claude Desktop.
 
-Policy is read at startup from the MCPB `user_config` (env/args) with a local JSON file
-(`~/.mac-shell-mcp/policy.json`) as fallback for non-Desktop clients. **Never mutated at runtime.**
+Every load path produces the same internal `Policy` object. **Never mutated at runtime.**
+
+### 5.1 Discovery order
+
+| | Path | Case |
+|---|---|---|
+| 1 | `$MAC_SHELL_MCP_CONFIG` | explicit override |
+| 2 | `./.mac-shell-mcp.json` | cwd — container, cloud, repo-scoped |
+| 3 | `~/.mac-shell-mcp/config.json` | normal desktop install |
+| 4 | MCPB/env `user_config` | Claude Desktop with no file present |
+| 5 | built-in defaults | §5.5 |
+
+First match wins; there is **no merging**. When a file is found *and* env config is also present, the
+file wins and the server logs which source won and what it ignored. One source of truth at a time,
+and it is always discoverable which one:
+
+```
+found ~/.mac-shell-mcp/config.json
+⚠ ignoring MCPB env config (MAC_SHELL_ROOTS, MAC_SHELL_COMMANDS)
+policy source: config file
+mode: ask→deny (no interactive client)
+```
+
+Rejected alternative: intersection/most-restrictive merge. Strictly safer, but a command denied while
+one source visibly permits it is very hard to debug.
+
+### 5.2 Schema
+
+Ships as `.mac-shell-mcp.sample.json`. Documented flow: **copy → edit → `chmod 444`**.
+
+```jsonc
+{
+  "allowedRoots": ["/Users/you/Servers"],
+  "allowedCommands": ["ls", "cat", "grep", "rg", "fd", "git"],
+  "deniedCommands": ["curl", "ssh", "nc"],            // always beats allowedCommands
+  "enabledTools": ["execute_command", "get_policy"],   // tool-level on/off
+  "permissions": { "rm": "deny", "chmod": "ask", "git": "allow" },
+  "auditLogPath": "~/.mac-shell-mcp/audit.log",
+  "maxOutputBytes": 1048576,
+  "timeoutMs": 30000
+}
+```
+
+`permissions` generalizes the tri-state specified for `rm` (§6) to every command. `enabledTools`
+lets a deployment remove a tool entirely — e.g. a headless deployment disabling
+`execute_external_command`.
+
+### 5.3 Self-protection — the server must not be usable against its own config
+
+**`chmod 444` is defense-in-depth, not the mechanism.** This server executes `chmod`, `mv`, and `cp`,
+so it can unlock or replace its own configuration:
+
+```
+chmod +w ~/.mac-shell-mcp/config.json          # server unlocks its own policy
+mv /tmp/evil.json ~/.mac-shell-mcp/config.json # replacement needs no write bit on the file at all
+```
+
+Replacing a file requires write permission on the **parent directory**, not on the file — so a
+read-only file is bypassed by `mv` without touching `chmod`. And because the file is owned by the
+user the server runs as, that user can always revert the mode.
+
+The enforcement is therefore **hard-coded in `path-guard.ts`**:
+
+- a non-configurable denied-path set: the resolved config file **and its parent directory**
+- applied to every write-effect command (`mv`, `cp`, `rm`, `chmod`, `chown`, `touch`, `tee`),
+  regardless of roots and regardless of policy
+- **not overridable from the config file** — a self-referential exemption is not protection
+- checked after `realpath()`, so symlinks to the config cannot launder access
+- **writes blocked, reads allowed.** `cat config.json` exposes nothing `get_policy` does not already
+  return, and blocking reads breaks legitimate "show me my setup" workflows
+
+`chmod 444` remains in the documented setup flow as an independent second layer.
+
+### 5.4 `ask` requires an interactive client
+
+`ask` resolves to the host's approval prompt. Headless deployments have no human and Claude Desktop
+does not support elicitation, so there is nothing to prompt.
+
+**When no interactive client is detected, `ask` degrades to `deny`,** and the server logs the
+downgrade at startup. Degrading to `allow` would silently convert the most cautious setting into the
+least safe one in exactly the environment with the least oversight.
+
+### 5.5 First-run posture
+
+Ships with a read-only command set (`ls, cat, grep, rg, fd, find, head, tail, wc, pwd, echo, git`)
+and **zero roots**. Every call is therefore denied — but the denial names the allowed commands and
+points at the config file or extension settings. The first failure teaches setup rather than
+stonewalling.
+
+### 5.6 MCPB specifics
 
 Verified against the installed `@anthropic-ai/mcpb@2.1.2`, manifest schema 0.4:
 
@@ -191,7 +281,7 @@ Verified against the installed `@anthropic-ai/mcpb@2.1.2`, manifest schema 0.4:
 - `multiple: true` is supported; `default` accepts `string[]`
 - `mcp_config` carries `command`, `args`, `env`, `platform_overrides`
 
-| Config field | Type | Default |
+| `user_config` field | Type | Default |
 |---|---|---|
 | `allowed_roots` | `directory`, `multiple: true` | *empty* |
 | `allowed_commands` | `string` (comma-delimited) | read-only set |
@@ -200,15 +290,30 @@ Verified against the installed `@anthropic-ai/mcpb@2.1.2`, manifest schema 0.4:
 | `max_output_bytes` | `number` | 1 MiB |
 | `timeout_ms` | `number` | 30000 |
 
+⚠️ **Every field carrying a `default` must be `required: false`.** Claude Desktop (≥1.12603.x) will
+otherwise install the connector disabled with "missing required configuration", and renders the
+settings form pristine so Save stays greyed out even though the defaults are visibly populated —
+leaving users stuck unless they discover that dirtying a field re-enables Save. With
+`required: false`, install → auto-enable → connected is a single click. The server's own loader still
+errors clearly on a genuinely missing value, so runtime strictness is unchanged.
+
 MCP `roots` and `elicitation` are **not currently supported by Claude Desktop**, so neither can carry
-the security boundary. If `roots` support lands, it may only *narrow* within `allowed_roots`, never
+the security boundary. If `roots` support lands, it may only *narrow* within `allowedRoots`, never
 widen.
 
-### 5.1 First-install posture
+### 5.7 Deployment targets
 
-Ships with a read-only command set (`ls, cat, grep, rg, fd, find, head, tail, wc, pwd, echo, git`)
-and **zero roots**. Every call is therefore denied — but the denial names the allowed commands and
-directs the user to the extension's settings. The first failure teaches setup rather than stonewalling.
+| Target | Config source | Notes |
+|---|---|---|
+| Claude Desktop | MCPB form, or file if present | primary target |
+| Claude Code | config file | Bash already exists here; low value, but must not break |
+| Docker / Smithery | `./.mac-shell-mcp.json` baked in, or `$MAC_SHELL_MCP_CONFIG` | `ask`→`deny` (§5.4) |
+| Custom host | any of the above | |
+
+**Positioning caveat for hosted Smithery:** the server executes inside an ephemeral Linux container,
+not on the user's Mac. It is not "remote access to your terminal," and macOS-specific commands do not
+exist there — the current `Dockerfile` already concedes this. Support it as a deployment target;
+do not describe it as remote Mac access.
 
 ---
 
@@ -311,8 +416,8 @@ entry is a no-op and is dropped.
 
 | Module | Responsibility |
 |---|---|
-| `policy.ts` | Load + validate config (zod). Immutable after startup. |
-| `path-guard.ts` | Path-shape detection, `realpath` resolution, root confinement. |
+| `policy.ts` | Discovery order (§5.1), load + validate config (zod), `ask`→`deny` degradation (§5.4). Immutable after startup. |
+| `path-guard.ts` | Path-shape detection, `realpath` resolution, root confinement, **hard-coded config self-protection (§5.3)**. |
 | `git-context.ts` | Recoverability ladder (§6.2). |
 | `audit-log.ts` | Append-only JSONL + suggestion aggregation. |
 | `command-service.ts` | Execution. No shell. Effect/scope classification, pipelines. |
@@ -360,6 +465,17 @@ Regression tests, derived from the verified exploits:
 7. `rm -rf` denied regardless of policy; `rm` of a gitignored file yields the unrecoverable warning
 8. `grep` no-match returns `exitCode: 1` with `isError` unset
 9. Output over cap truncates rather than throwing
+10. **Config self-protection (§5.3)** — each must be denied even when the config path sits inside an
+    allowed root and its command is otherwise permitted:
+    - `chmod +w <config>` denied
+    - `mv <anything> <config>` denied (the read-only-file bypass)
+    - `cp`/`rm`/`touch`/`tee` against `<config>` denied
+    - writes to the config's **parent directory** denied
+    - a symlink resolving to `<config>` denied
+    - `cat <config>` **allowed** (reads permitted by design)
+    - a config file attempting to exempt its own path has no effect
+11. `ask` degrades to `deny` when no interactive client is present (§5.4) — never to `allow`
+12. Precedence (§5.1): file beats env; the ignored source is named in the startup log
 
 ---
 
@@ -373,6 +489,18 @@ Regression tests, derived from the verified exploits:
 - `SECURITY_REVIEW.md` rewritten (§1.3); `README.md` and `SECURITY.md` corrected — both currently
   describe the approval workflow as a real control
 - Fix `index.ts:30` version string (`1.0.0` vs package.json `1.1.0`)
+- **`smithery.json` rewritten** — it currently advertises the removed tools (`add_to_whitelist`,
+  `update_security_level`, `remove_from_whitelist`, `approve_command`, `deny_command`,
+  `get_pending_commands`) and stale `environment` keys (`MAC_SHELL_SAFE_MODE`,
+  `MAC_SHELL_APPROVAL_TIMEOUT`) that no longer exist. Left as-is it would publish the vulnerable
+  surface as the documented API.
+- **`Dockerfile` updated** — must ship/mount a config file and set `$MAC_SHELL_MCP_CONFIG`, otherwise
+  a container starts with built-in defaults and zero roots. Also drop the misleading `EXPOSE 3000`
+  (the stdio transport binds no port), and collapse the redundant
+  `npm ci --only=production && npm ci --only=development` — verified that the second call installs
+  both prod and dev dependencies, so the first is wasted work rather than a correctness bug. Both
+  flags are deprecated in favour of `--omit=dev`.
+- `.mac-shell-mcp.sample.json` added, with the copy → edit → `chmod 444` flow documented in README
 
 ---
 
@@ -383,5 +511,12 @@ Regression tests, derived from the verified exploits:
 3. **`allowed_commands` as a comma-delimited string** is a weak config surface — MCPB has no
    list-of-strings type. Acceptable, and `suggest_policy_config` exists to generate it.
 4. **No enforcement against a malicious client.** A client that ignores annotations gets whatever
-   `allowed_commands` + `allowed_roots` permit. The server-side policy is the real boundary;
+   `allowedCommands` + `allowedRoots` permit. The server-side policy is the real boundary;
    annotations are UI hints only.
+5. **The config file is a single point of trust.** Anyone who can write it owns the server's
+   authority. §5.3 stops *this server* from being the one to write it, and `chmod 444` raises the bar
+   for everything else — but a separate process running as the same user can still rewrite it. That
+   is inherent to file-based config and is not solvable from inside this process.
+6. **`ask` is only as strong as the host.** It resolves to the client's approval prompt, so a host
+   configured to always-allow silently converts every `ask` into `allow`. Headless deployments
+   degrade to `deny` (§5.4), but a *misconfigured interactive* host is outside our control.
