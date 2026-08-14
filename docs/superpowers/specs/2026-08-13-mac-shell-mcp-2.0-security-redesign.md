@@ -358,13 +358,21 @@ Plumbing (all verified working): `git rev-parse --show-toplevel`, `git check-ign
 duration, allow/deny verdict. On by default with a configurable path and size cap. This is the answer
 to *"what did Claude actually do?"* and it is what makes handing over a terminal reasonable.
 
-**`suggest_policy_config`** — reads the audit log and emits a copy-pasteable value for the Desktop
-config field:
+**`suggest_policy_config`** — reads the audit log and emits copy-pasteable config in **both** shapes,
+since the target depends on how the server was configured (§5.1): a JSON fragment for the config file
+and a comma-delimited string for the MCPB form field.
 
 > You've approved `rg` against `~/Servers` 14 times and denied it 0 times.
-> Suggested `allowed_commands`: `ls,cat,rg,fd,grep,head,tail,wc,git`
+>
+> Config file — `allowedCommands`:
+> ```json
+> ["ls", "cat", "rg", "fd", "grep", "head", "tail", "wc", "git"]
+> ```
+> MCPB field — `allowed_commands`:
+> `ls,cat,rg,fd,grep,head,tail,wc,git`
 
-It only *suggests*. The server cannot apply it; a human copies, pastes, and restarts the server. This
+It only *suggests*. The server cannot apply it — §5.3 specifically forbids it from writing the config
+file — so a human copies, pastes, and restarts the server. This
 closes the loop between observed usage and configuration, which is what makes a restrictive default
 tolerable rather than infuriating. It is explicitly **not** a privilege-escalation path, because the
 server has no way to act on its own suggestion.
