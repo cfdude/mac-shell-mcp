@@ -492,8 +492,7 @@ Regression tests, derived from the verified exploits:
 - `2.0.0` — breaking (tools removed/renamed)
 - MCPB manifest + **signed** bundle (`mcpb pack` / `mcpb sign`) as a 2.0.0 deliverable — without it
   the config screen does not exist and the security model has no UI
-- GHSA advisory crediting Taran / Shroud Labs. Reported 2026-08-09, proposed disclosure 2026-11-07
-  (dates read DD/MM)
+- Coordinated disclosure — see §12.1
 - `SECURITY_REVIEW.md` rewritten (§1.3); `README.md` and `SECURITY.md` corrected — both currently
   describe the approval workflow as a real control
 - Fix `index.ts:30` version string (`1.0.0` vs package.json `1.1.0`)
@@ -509,6 +508,35 @@ Regression tests, derived from the verified exploits:
   both prod and dev dependencies, so the first is wasted work rather than a correctness bug. Both
   flags are deprecated in favour of `--omit=dev`.
 - `.mac-shell-mcp.sample.json` added, with the copy → edit → `chmod 444` flow documented in README
+
+### 12.1 Coordinated disclosure
+
+The reporter (Taran, Shroud Labs) confirmed on 2026-08-14 that they did **not** find the shell
+injection and are reporting only the self-approval path, and asked for a GHSA plus a CVE request.
+
+**Two separate advisories, not one.** GHSA credits are advisory-level, not per-finding, so a single
+combined advisory would credit the reporter for CWE-78 as well — which they explicitly declined.
+Separate filings keep attribution accurate and give each issue its own CVE and its own CVSS.
+
+| | CWE-862 — self-approval | CWE-78 — shell injection |
+|---|---|---|
+| Reporter | **Taran, Shroud Labs** (credited) | internal, found during this review |
+| Reported | 2026-08-09 | 2026-08-13 |
+| Reporter CVSS | 8.4 High `AV:L/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H` | — |
+| Our CVSS | accept reporter's score | to be scored; consider `S:C`, since escaping the whitelist is arguably a scope change |
+
+**Sequencing — do not publish before a fixed version exists.** Draft both advisories privately, ship
+`2.0.0` to npm, then publish and request CVEs. Publishing first would 0-day the package's existing
+users, who have no fixed version to move to. The reporter's proposed public date is 2026-11-07, which
+leaves ample room; if `2.0.0` slips near that date, ask for an extension rather than publishing an
+unfixed advisory.
+
+**On the offer to draft advisory text:** accept for CWE-862 as a *review* rather than authorship — we
+write both drafts, since we hold the code and the verified reproductions, and share the CWE-862 draft
+with the reporter for correction before filing. This honours the offer without outsourcing accuracy
+on a description we are accountable for.
+
+Both advisories name `2.0.0` as the fixed version and `<= 1.1.0` as affected.
 
 ---
 
