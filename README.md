@@ -249,11 +249,22 @@ Deny a pending command.
 
 ## Security Considerations
 
+> **⚠️ Accuracy note (2026-08-28).** This section previously claimed that forbidden commands
+> are never executed and that the server "uses Node.js's `execFile` instead of `exec` to prevent
+> shell injection". **Neither claim holds in 1.x.** They have been removed rather than restated,
+> because external reporters reasonably relied on them. Treat 1.x as providing no meaningful
+> sandbox, and see [SECURITY.md](SECURITY.md) plus the repository's
+> [security advisories](https://github.com/cfdude/mac-shell-mcp/security/advisories).
+
 - All commands are executed with the permissions of the user running the MCP server
-- Commands requiring approval are held in a queue until explicitly approved
-- Forbidden commands are never executed
-- The server uses Node.js's `execFile` instead of `exec` to prevent shell injection
+- Commands requiring approval are held in a queue until approved — **but the approval tools are
+  exposed to the same client that makes the request, so this is not an enforced control in 1.x**
+- The command whitelist is mutable at runtime by any connected client, so the "forbidden" tier
+  is advisory rather than binding in 1.x
 - Arguments are validated against allowed patterns when specified
+
+A redesign that makes these guarantees real ships in 2.0.0 — see
+[the design spec](docs/superpowers/specs/2026-08-13-mac-shell-mcp-2.0-security-redesign.md).
 
 ## Extending the Whitelist
 
