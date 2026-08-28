@@ -24,3 +24,6 @@ dist/
 *.swp
 *.swo
 .DS_Store
+.conductor/detours.log
+.conductor/write-conflicts.log
+.conductor/write-conflicts.latch

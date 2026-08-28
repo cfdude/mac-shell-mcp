@@ -1,0 +1,35 @@
+schema: spec-driven
+
+context: |
+  mac-shell-mcp — an MCP server exposing macOS shell execution to AI clients
+  (primarily Claude Desktop; also Claude Code, Docker/Smithery, custom hosts).
+
+  Tech stack: TypeScript (ESM, strict), Node >=18, @modelcontextprotocol/sdk,
+  zod, Jest. Conventional commits. TypeScript is LEGACY here — this repo stays
+  TypeScript; do not propose converting it, and do not propose it for new work.
+
+  Current work: the 2.0 security redesign. The approved design spec is
+  docs/superpowers/specs/2026-08-13-mac-shell-mcp-2.0-security-redesign.md and it
+  is authoritative — read it before generating artifacts.
+
+  Non-negotiable invariants from that spec:
+  - NO shell. execFile is called without the `shell` option, ever. Passing
+    `shell` re-introduces the verified CWE-78 command injection.
+  - The agent cannot widen its own authority. No MCP tool mutates policy —
+    such tools are absent, not merely gated.
+  - Authorization is effect x scope computed per call (does the command mutate,
+    and do its realpath-resolved arguments land inside configured roots), never
+    a static command-name allowlist.
+  - The config file is canonical; the MCPB manifest is one delivery mechanism.
+  - path-guard hard-codes protection of the config file and its PARENT directory
+    against every write-effect command, non-overridable from config itself.
+  - Fail closed. Ambiguity denies, and every denial names what IS allowed.
+  - `ask` degrades to `deny` when no interactive client is present, never to `allow`.
+
+  Testing: Jest runs against compiled output in build/ (jest.config.js sets
+  transform: {} and matches tests/**/*.test.js), so `npm run build` gates tests.
+  ts-jest is NOT a dependency. TypeScript is pinned to 6.0.3 — NOT 7.x, which
+  @typescript-eslint/parser (peer >=4.8.4 <6.1.0) refuses.
+
+  Completion bar: every test, lint and format check green across the whole tree.
+  Never `git commit --no-verify`.

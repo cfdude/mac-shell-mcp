@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "active": "mac-shell-mcp-2-security-redesign",
+  "epics": [
+    {
+      "id": "mac-shell-mcp-2-security-redesign",
+      "title": "mac-shell-mcp 2.0 security redesign (CWE-862 + CWE-78)",
+      "priority": "P0",
+      "status": "active",
+      "role": "epic",
+      "lane": "openspec",
+      "links": [],
+      "reconcileNeeded": false,
+      "attributedCommits": [],
+      "startedAt": "2026-08-28T22:46:06.110Z"
+    }
+  ],
+  "detourStack": [],
+  "revision": 6,
+  "archiveBackfilledAt": "2026-08-28T22:45:37.558Z",
+  "pmVersion": "0.30.0",
+  "platform": "claude-code"
+}
