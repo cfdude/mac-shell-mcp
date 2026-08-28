@@ -103,6 +103,7 @@
 - [ ] 13.4 Finalize `GHSA-q7hh-g47q-hwqj` (CWE-862, `Taran-Douley`) from the reporter's supplied draft text, resolving the CVSS discrepancy between their 8.4 High and the 9.3 Critical the MITRE portal produced; verify the published score and vector agree with the description
 - [ ] 13.5 Set affected `<= 1.1.0` and fixed `2.0.0` on both surviving advisories and request CVEs, and verify neither is published before 13.2 confirms `2.0.0` installs from npm
 - [ ] 13.6 Publish both advisories and comment on issue #14 linking them, and verify the issue reflects the fixed version
+- [ ] 13.6a Notify `@iflow-mcp` (`chatflowdev@gmail.com`) that `@iflow-mcp/mac-shell-mcp@1.1.0` ships the advisory-tracked vulnerabilities, so their mirror can be updated — they are an MIT-compliant redistributor, so this is coordination and not a dispute; verify the notice is sent once 2.0.0 is published
 - [ ] 13.7 Reply to each of the three CWE-78 reporters on their advisory, acknowledging the delay — the oldest went 211 days without triage — and naming the fixed version; verify each advisory carries a maintainer response
 
 ## 14. Close out

@@ -24,6 +24,28 @@ paths that the original author has no ability to fix.
 | Publisher | — | `jensshum <jensshum@gmail.com>` |
 | Versions published | — | `1.0.4` only, never updated |
 
+## 1a. Scope — this dispute targets ONE package, not both
+
+A second npm package also redistributes this project: `@iflow-mcp/mac-shell-mcp@1.1.0`, published
+2025-11-19 by `chatflowdev` / `qystart`, part of a scope mirroring roughly twenty MCP servers.
+**It is MIT-compliant and is NOT part of this dispute.**
+
+| | `mac-shell-mcp` (`jensshum`) | `@iflow-mcp/mac-shell-mcp` |
+|---|---|---|
+| LICENSE file | ✗ omitted | ✓ included |
+| `author` | ✗ blank | ✓ `Rob Sherman` |
+| `repository` / `homepage` / `bugs` | ✗ removed | ✓ point to this repo |
+| Name | bare — occupies the project's own name | scoped — no name conflict |
+| **Verdict** | **MIT violation** | **compliant redistribution** |
+
+MIT permits exactly what `@iflow-mcp` did: redistribute, keeping the notice and attribution. They
+require no action beyond a courtesy notice.
+
+**Both ship the vulnerable code**, however — `@iflow-mcp/mac-shell-mcp@1.1.0` carries the same two
+sinks at lines 262 and 309. So there are two npm distribution channels for the vulnerable version
+and this project controls neither. That is a disclosure-coordination problem for `@iflow-mcp`, and a
+legal one only for the unscoped package.
+
 ## 2. Evidence
 
 **The published README is byte-identical to this repository's README as it stood one month before
@@ -74,30 +96,65 @@ not be gated on a dispute outcome. A previous informal dispute attempt did not p
 material difference this time is the byte-identical README evidence, the license-text omission, and
 the unremediable-vulnerability angle.
 
-## 5. Draft — direct contact (step D)
+## 5. Direct contact (step D) — FINAL, send-ready
 
-> Subject: mac-shell-mcp on npm — attribution and maintenance
->
-> Hello,
->
-> I'm the author of `mac-shell-mcp` at github.com/cfdude/mac-shell-mcp, first committed 2025-03-12.
-> The npm package `mac-shell-mcp@1.0.4` that you published on 2025-04-12 contains that project's
-> code and a byte-identical copy of its README.
->
-> The project is MIT licensed, so redistribution is welcome — but MIT requires that the copyright and
-> permission notice travel with the code. The published tarball has no LICENSE file, and the
-> `author`, `repository`, `homepage`, and `bugs` fields have been removed while `"license": "MIT"` is
-> retained.
->
-> There is also a security problem. That version contains two vulnerabilities now recorded as
-> advisories on the repository, and because I'm not a maintainer of the npm package I can't publish a
-> fix or deprecate it. Anyone installing it today gets vulnerable code with no upgrade path.
->
-> Could you either transfer the package name to me, or unpublish/deprecate it and point users at the
-> repository? I'd much rather resolve this directly than through npm support.
->
-> Thanks,
-> Rob Sherman — security@onvex.ai
+**To:** `jensshum@gmail.com` · **From:** `rsherman@onvex.ai` · **Cc:** `security@onvex.ai`
+**Subject:** mac-shell-mcp on npm — attribution, and a security issue I can't fix
+**Status:** blocked on Google OAuth for `rsherman@onvex.ai`; not yet sent.
+
+```
+Hello,
+
+I'm the author of mac-shell-mcp (github.com/cfdude/mac-shell-mcp), first committed on
+2025-03-12. The npm package `mac-shell-mcp@1.0.4` that you published on 2025-04-12 contains
+that project's code, and its README is a byte-identical copy of mine as it stood at the time
+— 346 of 346 lines.
+
+I want to start by saying I'm not looking for a fight, and redistribution itself is fine by
+me. The project is MIT licensed precisely so people can use and republish it.
+
+There are two things I'd like to sort out.
+
+**Attribution.** MIT permits redistribution, but it asks that the copyright and permission
+notice travel with the code. The published tarball has no LICENSE file, and the `author`,
+`repository`, `homepage`, and `bugs` fields have been removed from package.json, while
+`"license": "MIT"` is still declared. The practical effect is that someone installing it has
+no way to find the project, report a bug, or know who wrote it.
+
+**Security — this is the part I actually care about.** Version 1.0.4 contains two
+vulnerabilities that are now filed as security advisories on my repository. One allows
+arbitrary command execution that bypasses the tool's own safety model. They were reported to
+me by four independent security researchers, and I'm currently shipping a 2.0.0 that fixes
+them.
+
+The problem is that I'm not a maintainer of your npm package, so I can't publish a fix or
+mark it deprecated. Anyone running `npm install mac-shell-mcp` today gets vulnerable code
+with no upgrade path, and I have no way to reach them. That's what I'd most like to solve.
+
+Any one of these would work for me, in order of preference:
+
+1. Transfer the package name to me (npm account: cfdude), and I'll publish the fixed 2.0.0
+   under it.
+2. Unpublish 1.0.4.
+3. Deprecate 1.0.4 with a message pointing at github.com/cfdude/mac-shell-mcp, so at least
+   people are warned.
+
+If it's easier, I'm happy to walk through the npm transfer process with you — it's a couple
+of commands on your end.
+
+For what it's worth, another group (@iflow-mcp) also republished this project, and they kept
+the LICENSE and the attribution intact. That's the shape I'd have been glad to see here, and
+it's genuinely all I'm asking for.
+
+I'd much rather resolve this directly than go through npm support, so I wanted to reach out
+first. Happy to talk it through if any of this is unclear or if I've misread the situation.
+
+Thanks,
+
+Rob Sherman
+security@onvex.ai
+github.com/cfdude
+```
 
 ## 6. Draft — npm support (steps A–C)
 
@@ -137,3 +194,5 @@ the unremediable-vulnerability angle.
 - [ ] Fill `<DATE>` in §6 with the date §5 was actually sent
 - [ ] Publish `@cfdude/mac-shell-mcp@2.0.0` (step E) so a fixed version exists to point users to
 - [ ] Keep a local copy of `mac-shell-mcp-1.0.4.tgz` as evidence — an unpublish would remove it
+- [ ] Separately, notify `@iflow-mcp` (`chatflowdev@gmail.com`) when 2.0.0 ships so their mirror can
+      be updated — a courtesy to a compliant redistributor, not a dispute
