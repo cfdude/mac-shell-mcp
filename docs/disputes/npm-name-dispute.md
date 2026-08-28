@@ -100,7 +100,8 @@ the unremediable-vulnerability angle.
 
 **To:** `jensshum@gmail.com` · **From:** `rsherman@onvex.ai` · **Cc:** `security@onvex.ai`
 **Subject:** mac-shell-mcp on npm — attribution, and a security issue I can't fix
-**Status:** blocked on Google OAuth for `rsherman@onvex.ai`; not yet sent.
+**Status:** ✅ **SENT 2026-08-28** from `rsherman@velocityinteractive.com` (Gmail message id `1a04ac76d8e3f3c8`), cc `security@onvex.ai`.
+**Escalate if no reply by Thursday 2026-09-03** — three business days (Mon 8/31, Tue 9/1, Wed 9/2).
 
 ```
 Hello,
@@ -186,12 +187,12 @@ github.com/cfdude
 > **Requested:** transfer of the package name, or unpublication. Failing either, please deprecate
 > 1.0.4 with a pointer to github.com/cfdude/mac-shell-mcp so users are warned.
 >
-> I attempted direct contact with the publisher on <DATE> before filing.
+> I attempted direct contact with the publisher on 2026-08-28 before filing, and received no response.
 
 ## 7. Before filing
 
-- [ ] Send §5 and wait three business days (the disputes policy expects a good-faith attempt)
-- [ ] Fill `<DATE>` in §6 with the date §5 was actually sent
+- [x] Send §5 — sent 2026-08-28; wait three business days per the disputes policy
+- [x] Fill `<DATE>` in §6 — set to 2026-08-28
 - [ ] Publish `@cfdude/mac-shell-mcp@2.0.0` (step E) so a fixed version exists to point users to
 - [ ] Keep a local copy of `mac-shell-mcp-1.0.4.tgz` as evidence — an unpublish would remove it
 - [ ] Separately, notify `@iflow-mcp` (`chatflowdev@gmail.com`) when 2.0.0 ships so their mirror can
