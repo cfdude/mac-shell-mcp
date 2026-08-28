@@ -67,6 +67,8 @@
 - [ ] 9.3 Add MCP annotations to every tool and verify a test asserts `execute_command` reports `readOnlyHint: false` with `openWorldHint: false`, `execute_external_command` reports `destructiveHint: true` with `openWorldHint: true`, and `execute_pipeline` reports `readOnlyHint: true`
 - [ ] 9.4 Implement `enabledTools` so an omitted tool is absent from `ListTools`, and verify a test covers it
 - [ ] 9.5 Rewrite the existing `tests/command-service.test.js` — it currently asserts `addToWhitelist` works and therefore encodes the vulnerability as intended behavior — and verify the replaced assertions test the new contract
+- [ ] 9.5a Fix the suite's **single-use bug**, proven deterministically 2026-08-28: `should queue command requiring approval` runs `mkdir test-dir` but cleans up with `rmdir`, which is not in the whitelist, so cleanup throws, the `try/catch` swallows it, and `test-dir/` persists. Run 1 on a clean tree passes 8/8; runs 2 and 3 fail with zero code changes. CI never caught it because every CI run is a fresh checkout. Fix by giving each test a unique temporary directory outside the repo and cleaning up through the filesystem API rather than a whitelisted command; verify by running the suite three times consecutively and getting identical passes
+- [ ] 9.5b Add `test-dir/` to `.gitignore` and delete any stray copy, so a poisoned local tree cannot silently persist between runs; verify `git status` is clean immediately after a test run
 - [ ] 9.6 Fix the server version string in `src/index.ts` to match `package.json` and verify they agree programmatically in a test
 
 ## 10. Packaging and distribution
@@ -85,7 +87,7 @@
 
 ## 12. Verification and Gate 2
 
-- [ ] 12.1 Run the full suite — `npm run build && npm run lint && npm run format:check && npm test` — and verify every check passes with zero failures, including tests not written as part of this change
+- [ ] 12.1 Run the full suite — `npm run build && npm run lint && npm run format:check && npm test` — and verify every check passes with zero failures, including tests not written as part of this change. Run the suite **three times consecutively** and require identical results, since the pre-existing single-use bug (9.5a) proved a single green run does not establish a green suite
 - [ ] 12.2 Re-run every verified exploit from the design as a regression: the injection PoC sentinel, forbidden-command promotion, out-of-scope refusal, pipeline stage-2 denial, symlink escape, `find -exec`, `git clean -fdx`, `rm -rf`, the ignored-file warning, `grep` exit 1, and output truncation; verify all pass
 - [ ] 12.3 Perform the call-site completeness sweep: for every guard this change introduces, enumerate ALL call sites mechanically with `rg` (never from memory), state where the guard holds and where it does not, and justify each omission — a guard applied at one call site while an identical sibling is left untouched is a finding, not a detail
 - [ ] 12.4 Verify against the commits, not the working tree: for every task, run `git show --stat <that task's sha>` and assert each file the task claims to change appears in THAT commit; a task whose file is absent from its commit fails even if the working tree holds the edit
