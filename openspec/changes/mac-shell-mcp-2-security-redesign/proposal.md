@@ -4,11 +4,21 @@ Two verified vulnerabilities make the current security model decorative rather t
 
 **CWE-862 (reported as [#14](https://github.com/cfdude/mac-shell-mcp/issues/14), Taran / Shroud Labs, 8.4 High):** the approval workflow is self-serve. The agent holds `execute_command`, `get_pending_commands` and `approve_command`, so it approves its own requests with no human involved. Worse, `addToWhitelist` is a plain `Map.set` that overwrites `FORBIDDEN` entries — `add_to_whitelist("bash","safe")` followed by `execute_command("bash",["-c",…])` is unrestricted code execution.
 
-**CWE-78 (found during this review, not in the original report):** `execFile` is called with `shell: this.shell`, which is always `/bin/zsh` and therefore always truthy. Every command runs through a shell with arguments concatenated rather than escaped. Verified live — `echo` with the argument `hello; id > /tmp/PWNED.txt` executed `id` and wrote the file. Any whitelisted command yields arbitrary code execution.
+**CWE-78 (independently reported three times before this review — see below):** `execFile` is called with `shell: this.shell`, which is always `/bin/zsh` and therefore always truthy. Every command runs through a shell with arguments concatenated rather than escaped. Verified live — `echo` with the argument `hello; id > /tmp/PWNED.txt` executed `id` and wrote the file. Any whitelisted command yields arbitrary code execution.
 
 Underneath both sits a design error: a static command-name allowlist cannot express the real risk. `grep` is nominally read-only and `grep -r AKIA ~/.aws` exfiltrates credentials, while `mkdir ./build` is nominally destructive and harmless. The command name does not predict blast radius.
 
-This is a published npm package with a `bin`, so existing installs are exposed until a fixed version ships.
+**Three separate reporters filed CWE-78 before this review began**, and all three advisories are still in `triage` with no CVE:
+
+| Advisory | Reporter | Filed | Age |
+|---|---|---|---|
+| `GHSA-2h3j-235x-vx2q` | `hackwither` | 2026-01-28 | **211 days** |
+| `GHSA-8qwq-gwp3-g5h7` | `infosec-traceforce` | 2026-07-13 | 46 days |
+| `GHSA-h926-3g54-mr3v` | `bebold6133` | 2026-08-14 | 14 days |
+
+This review rediscovered the same defect independently, but it did not find it first and must not be credited as such. `GHSA-q7hh-g47q-hwqj` (`Taran-Douley`, 2026-08-20) carries the CWE-862 advisory draft.
+
+This is a published npm package with a `bin`, so existing installs are exposed until a fixed version ships — and the oldest report has been outstanding for seven months.
 
 ## What Changes
 
@@ -44,5 +54,5 @@ None — `openspec/specs/` is empty; this is the repository's first spec set.
 - **Tests:** `tests/command-service.test.js` currently *asserts `addToWhitelist` works* — it encodes the vulnerability as intended behavior and changes meaning here.
 - **Public API:** breaking. Ships as `2.0.0`.
 - **Packaging/docs:** `smithery.json`, `Dockerfile`, `manifest.json` (new), `.mac-shell-mcp.sample.json` (new), `README.md`, `SECURITY.md`, `SECURITY_REVIEW.md` (whose current recommendation is wrong).
-- **Disclosure:** two separate GHSAs — CWE-862 crediting the reporter, CWE-78 as an internal find — drafted privately and published only after `2.0.0` is on npm, so existing users are not 0-dayed.
+- **Disclosure:** four advisories already exist in `triage`. Consolidate the three CWE-78 duplicates into one crediting all three reporters, keep the CWE-862 advisory crediting `Taran-Douley`, and publish only after `2.0.0` is on npm so existing users are not 0-dayed.
 - **Authoritative design:** `docs/superpowers/specs/2026-08-13-mac-shell-mcp-2.0-security-redesign.md`.

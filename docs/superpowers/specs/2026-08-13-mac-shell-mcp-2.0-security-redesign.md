@@ -527,19 +527,38 @@ Regression tests, derived from the verified exploits:
 
 ### 12.1 Coordinated disclosure
 
-The reporter (Taran, Shroud Labs) confirmed on 2026-08-14 that they did **not** find the shell
-injection and are reporting only the self-approval path, and asked for a GHSA plus a CVE request.
+> **Corrected 2026-08-28.** An earlier version of this section called CWE-78 an internal find. It is
+> not. Checking the repository's advisory queue turned up **four advisories sitting in `triage`, none
+> with a CVE** — and three of them are independent CWE-78 reports that predate this review:
+>
+> | Advisory | Reporter | Filed | Age at correction |
+> |---|---|---|---|
+> | `GHSA-2h3j-235x-vx2q` | `hackwither` | 2026-01-28 | **211 days** |
+> | `GHSA-8qwq-gwp3-g5h7` | `infosec-traceforce` | 2026-07-13 | 46 days |
+> | `GHSA-h926-3g54-mr3v` | `bebold6133` | 2026-08-14 | 14 days |
+> | `GHSA-q7hh-g47q-hwqj` | `Taran-Douley` | 2026-08-20 | 8 days (CWE-862) |
+>
+> This review rediscovered CWE-78 independently, having not seen these, but it was **not first** and
+> must not be credited as the finder. The plan below is revised accordingly: consolidate rather than
+> file new.
 
-**Two separate advisories, not one.** GHSA credits are advisory-level, not per-finding, so a single
-combined advisory would credit the reporter for CWE-78 as well — which they explicitly declined.
-Separate filings keep attribution accurate and give each issue its own CVE and its own CVSS.
+The CWE-862 reporter (Taran, Shroud Labs) confirmed on 2026-08-14 that they did **not** find the shell
+injection and are reporting only the self-approval path, and asked for a GHSA plus a CVE request.
+They have since supplied their advisory draft text in `GHSA-q7hh-g47q-hwqj`.
+
+**Two advisories, but by consolidation rather than creation.** GHSA credits are advisory-level, not
+per-finding, so one combined advisory would credit each reporter for the other's finding. Keep CWE-862
+and CWE-78 separate, and merge the three duplicate CWE-78 reports into a single advisory crediting all
+three reporters in filing order — closing the other two as duplicates that name the survivor, so no
+reporter silently loses credit.
 
 | | CWE-862 — self-approval | CWE-78 — shell injection |
 |---|---|---|
-| Reporter | **Taran, Shroud Labs** (credited) | internal, found during this review |
-| Reported | 2026-08-09 | 2026-08-13 |
-| Reporter CVSS | 8.4 High `AV:L/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H` | — |
-| Our CVSS | accept reporter's score | to be scored; consider `S:C`, since escaping the whitelist is arguably a scope change |
+| Advisory | `GHSA-q7hh-g47q-hwqj` | consolidate 3 → 1 |
+| Reporter | **Taran, Shroud Labs** | **`hackwither`, `infosec-traceforce`, `bebold6133`** — all three credited |
+| Reported | 2026-08-09 | first on **2026-01-28** |
+| Reporter CVSS | 8.4 High `AV:L/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H`; MITRE portal rescaled to 9.3 Critical | — |
+| Our CVSS | resolve the 8.4 / 9.3 discrepancy at filing | to be scored; consider `S:C`, since escaping the whitelist is arguably a scope change |
 
 **Sequencing — do not publish before a fixed version exists.** Draft both advisories privately, ship
 `2.0.0` to npm, then publish and request CVEs. Publishing first would 0-day the package's existing

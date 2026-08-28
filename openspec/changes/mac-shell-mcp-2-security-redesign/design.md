@@ -105,9 +105,9 @@ Because this model relies on `git` as the recovery mechanism, `git` is permitted
 
 1. Ship as `2.0.0`. The removed tools are gone, not deprecated — a tool that exists to be self-approved cannot be safely soft-landed.
 2. A fresh install has no roots and refuses everything, with each refusal naming the permitted commands and the configuration location, so the upgrade path is discoverable from the first failure rather than from release notes.
-3. Publish to npm **before** the advisories, so users have a fixed version to move to. Two separate advisories — CWE-862 crediting the reporter, CWE-78 as an internal find — since advisory credits are advisory-level rather than per-finding.
+3. Publish to npm **before** the advisories, so users have a fixed version to move to. Four advisories already sit in `triage`, none with a CVE: three independent CWE-78 reports (`hackwither` 2026-01-28, `infosec-traceforce` 2026-07-13, `bebold6133` 2026-08-14) and one CWE-862 report (`Taran-Douley` 2026-08-20). Consolidate the three CWE-78 duplicates into a single advisory crediting all three reporters in order of filing, rather than opening a new one — this review rediscovered CWE-78 independently but was not first to it, and claiming an internal find would mis-credit three external reporters.
 4. Rollback is `npm install mac-shell-mcp@1.1.0`, which reinstates both vulnerabilities and is therefore documented as unsupported.
 
 ## Open Questions
 
-- The CVSS vector for CWE-78 is not yet fixed. The reporter's 8.4 High is accepted for CWE-862; whether CWE-78 warrants `S:C` (escaping the command allowlist as a scope change) is a scoring judgment made when the advisory is filed. It does not affect the specs, the approach, or the task breakdown.
+- The CVSS vector for CWE-78 is not yet fixed. For CWE-862 the reporter scored 8.4 High and notes the MITRE CVE portal rescaled it to 9.3 Critical; that discrepancy is resolved when the advisory is filed. Whether CWE-78 warrants `S:C` (escaping the command allowlist as a scope change) is the same kind of scoring judgment. Neither affects the specs, the approach, or the task breakdown.
