@@ -441,10 +441,26 @@ All to latest — the repo is touched rarely, so majors are taken now rather tha
 |---|---|---|---|
 | `@modelcontextprotocol/sdk` | 1.26.0 | 1.30.0 | annotations, structuredContent |
 | `zod` | 3.24 | 4.4.3 | SDK 1.30 declares `^3.25 \|\| ^4.0` — verified compatible |
-| `typescript` | 5.8 | 7.0.2 | ⚠️ native port. Verify ts-eslint + ts-node before committing; fall back to 5.9 and say so if the toolchain is not ready |
+| `typescript` | 5.8 | **6.0.3** | **not 7.0.2** — verified: `@typescript-eslint/parser@8.68.0` declares `typescript: ">=4.8.4 <6.1.0"`, so TS 7 breaks `npm run lint`. 6.0.3 is the highest supported. See §10.1 |
 | `eslint` | 9 | 10.8.1 | flat config already present |
 | `jest` | 29 | 30.4.2 | watch ESM config |
 | `@types/node` | 20 | 26.2.0 | |
+
+### 10.1 TypeScript 7 is not viable — verified
+
+| Tool | Peer range on `typescript` | TS 7.0.2? |
+|---|---|---|
+| `@typescript-eslint/parser@8.68.0` | `>=4.8.4 <6.1.0` | ❌ **blocks lint** |
+| `ts-jest@29.4.12` | `>=4.3 <7` | ❌ — but **not a dependency here** |
+| `ts-node@10.9.2` | `>=2.7` | ✅ permissive |
+
+`ts-jest` does not constrain this repo: `jest.config.js` sets `transform: {}` and
+`testMatch: ['**/tests/**/*.test.js']`, so tests run against compiled output in `build/` rather than
+transforming TypeScript. The binding constraint is typescript-eslint alone.
+
+Landing TS 7 would break `npm run lint`, and the completion bar requires the whole tree green
+without `--no-verify`. **TypeScript 6.0.3** takes the major bump while keeping lint working.
+Revisit when typescript-eslint widens its peer range.
 
 **Audit findings:** 8 (6 high) — `path-to-regexp`, `qs`, `ip-address`. **All transitive via the SDK's
 express/HTTP transports, which this server never instantiates** (stdio only), so none are reachable.
@@ -543,7 +559,8 @@ Both advisories name `2.0.0` as the fixed version and `<= 1.1.0` as affected.
 ## 13. Open risks
 
 1. **Path detection is heuristic** (§3.1). Mitigated by failing closed; documented, not hidden.
-2. **TypeScript 7** toolchain compatibility unverified (§10).
+2. ~~TypeScript 7 toolchain compatibility unverified~~ — **resolved 2026-08-14**: TS 7 breaks
+   typescript-eslint; pinning 6.0.3 (§10.1).
 3. **`allowed_commands` as a comma-delimited string** is a weak config surface — MCPB has no
    list-of-strings type. Acceptable, and `suggest_policy_config` exists to generate it.
 4. **No enforcement against a malicious client.** A client that ignores annotations gets whatever
