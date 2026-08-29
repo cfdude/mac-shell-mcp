@@ -100,26 +100,16 @@ the unremediable-vulnerability angle.
 
 **To:** `jensshum@gmail.com` · **From:** `rsherman@onvex.ai` · **Cc:** `security@onvex.ai`
 **Subject:** mac-shell-mcp on npm — attribution, and a security issue I can't fix
-**Status:** ⚠️ **NOT CONFIRMED DELIVERED — treat as unsent.**
+**Status:** ✅ **SENT 2026-08-28** from `rsherman@velocityinteractive.com`, cc `security@onvex.ai`,
+Gmail id `1a04ac76d8e3f3c8`. Confirmed carrying the `SENT` label, matching both its own `to:` and
+`from:` searches, with no bounce generated.
+**Escalate if no reply by Thursday 2026-09-03** — three business days (Mon 8/31, Tue 9/1, Wed 9/2).
 
-The Gmail API returned `Email sent! Message ID: 1a04ac76d8e3f3c8`, but verification against the
-mailbox contradicts that:
-
-| Check | Result |
-|---|---|
-| `in:trash` | **the message is here** |
-| `in:sent` | absent — the newest Sent item predates it |
-| `from:rsherman@velocityinteractive.com` | does not match it |
-| `to:jensshum@gmail.com` | no results at all |
-| bounce / delivery-status notification | none found |
-
-A genuinely sent message appears in Sent and matches its own `from:`/`to:`. This one does neither,
-and sits in Trash. The API's success response reported acceptance of the request, not delivery.
-
-**Before re-sending:** establish why it landed in Trash rather than Sent — a filter, an account
-sending restriction, or the client library trashing after a failure. Re-sending blind risks either a
-duplicate to the recipient or a second silent failure. Prefer sending from the Gmail web UI, where
-delivery is directly observable, and confirm it appears in Sent afterwards.
+> **Verification note.** The message was moved to Trash shortly after sending, which made it appear
+> unsent: Gmail search **excludes Trash and Spam by default**, so `in:sent`, `to:` and `from:` all
+> returned nothing while only `in:anywhere` found it. That is a search artifact, not a delivery
+> failure. When verifying a send, either scope the query with `in:anywhere` or confirm the `SENT`
+> label directly — an absence under default scope proves nothing about delivery.
 
 ```
 Hello,
@@ -205,12 +195,12 @@ github.com/cfdude
 > **Requested:** transfer of the package name, or unpublication. Failing either, please deprecate
 > 1.0.4 with a pointer to github.com/cfdude/mac-shell-mcp so users are warned.
 >
-> I attempted direct contact with the publisher on <DATE> before filing, and received no response.
+> I attempted direct contact with the publisher on 2026-08-28 before filing, and received no response.
 
 ## 7. Before filing
 
-- [ ] Send §5 — **first attempt 2026-08-28 did NOT confirm delivery** (landed in Trash, absent from Sent). Re-send and verify it appears in Sent before starting the three-business-day clock
-- [ ] Fill `<DATE>` in §6 — must be the date of a *confirmed* send, not the 2026-08-28 attempt
+- [x] Send §5 — sent 2026-08-28, verified via the `SENT` label after restoring from Trash
+- [x] Fill `<DATE>` in §6 — set to 2026-08-28
 - [ ] Publish `@cfdude/mac-shell-mcp@2.0.0` (step E) so a fixed version exists to point users to
 - [ ] Keep a local copy of `mac-shell-mcp-1.0.4.tgz` as evidence — an unpublish would remove it
 - [ ] Separately, notify `@iflow-mcp` (`chatflowdev@gmail.com`) when 2.0.0 ships so their mirror can
