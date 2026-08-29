@@ -57,6 +57,7 @@ Stated rather than implied. None of these is hidden by the design:
 - **Flag meanings vary between implementations.** `grep -R` follows symbolic links under one implementation and not another, so commands are pinned to an expected program path and flag allowlists are authored for that program.
 - **Commands run with the full permissions of the user running the server.** There is no sandbox.
 - **No delete capability.** `rm` is unavailable, as it was in 1.x.
+- **The stdio-only CI guard is a tripwire, not a proof.** The SDK's HTTP transports pull in a web-framework dependency tree whose advisories are unreachable here only because this server never instantiates them. CI fails if a transport reference appears in the source or built output, but it matches text rather than parsing a module graph, so a sufficiently indirect reference could evade it.
 
 ## Distribution
 
