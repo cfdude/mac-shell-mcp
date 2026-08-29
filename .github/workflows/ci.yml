@@ -75,11 +75,29 @@ jobs:
       # express/hono stack is never instantiated, so its advisories are
       # unreachable. If an HTTP or SSE transport is ever imported that argument
       # silently stops holding, so fail loudly instead.
+      # A regex over source text is not a parser: an import can be spelled in
+      # ways a path pattern will not match (string concatenation, dynamic
+      # import). So match the COMPONENT names rather than a full path, and check
+      # the built output as well as the source. This is a tripwire, not a proof
+      # -- SECURITY.md says so rather than implying completeness.
       - name: Refuse HTTP/SSE transports
         run: |
-          if grep -rnE "server/(streamableHttp|sse|express)\.js" src/; then
-            echo "::error::An HTTP/SSE transport was imported. This server is stdio-only;"
-            echo "::error::the dependency reachability argument in SECURITY.md no longer holds."
-            exit 1
-          fi
-          echo "stdio-only: confirmed"
+          set -euo pipefail
+          npm ci
+          npm run build
+          node -e "
+            const fs = require('fs');
+            const walk = (d) => fs.readdirSync(d, { withFileTypes: true })
+              .flatMap((e) => (e.isDirectory() ? walk(d + '/' + e.name) : [d + '/' + e.name]));
+            const PAT = /streamableHttp|sse\.js|server\/express|['\"]express['\"]/;
+            const hits = [...walk('src'), ...walk('build')]
+              .filter((f) => /\.(ts|js)\$/.test(f))
+              .filter((f) => PAT.test(fs.readFileSync(f, 'utf8')));
+            if (hits.length) {
+              console.error('::error::HTTP/SSE transport reference found in: ' + hits.join(', '));
+              console.error('::error::This server is stdio-only. The dependency reachability');
+              console.error('::error::argument in SECURITY.md no longer holds -- re-verify it.');
+              process.exit(1);
+            }
+            console.log('stdio-only: confirmed in source and built output');
+          "
