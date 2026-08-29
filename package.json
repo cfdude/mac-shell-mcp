@@ -1,11 +1,11 @@
 {
-  "name": "@cfdude/mac-shell-mcp",
+  "name": "@the_cfdude/mac-shell-mcp",
   "version": "2.0.0",
   "description": "MCP server for macOS shell access, confined to configured roots with no shell interpretation",
   "type": "module",
   "main": "build/index.js",
   "bin": {
-    "mac-shell-mcp": "./build/index.js"
+    "mac-shell-mcp": "build/index.js"
   },
   "files": [
     "build",

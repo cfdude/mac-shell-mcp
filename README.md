@@ -34,7 +34,7 @@ Each is restricted to an allowlist of flags. None of them can write a file, exec
 ## Install
 
 ```bash
-npm install -g @cfdude/mac-shell-mcp
+npm install -g @the_cfdude/mac-shell-mcp
 ```
 
 Then create a policy:
@@ -51,7 +51,7 @@ Add to your MCP client:
 ```json
 {
   "mcpServers": {
-    "mac-shell": { "command": "npx", "args": ["-y", "@cfdude/mac-shell-mcp"] }
+    "mac-shell": { "command": "npx", "args": ["-y", "@the_cfdude/mac-shell-mcp"] }
   }
 }
 ```

@@ -61,4 +61,4 @@ Stated rather than implied. None of these is hidden by the design:
 
 ## Distribution
 
-The npm package named `mac-shell-mcp` is **not published by this project** and is not under its control. Install `@cfdude/mac-shell-mcp`, or from this repository.
+The npm package named `mac-shell-mcp` is **not published by this project** and is not under its control. Install `@the_cfdude/mac-shell-mcp`, or from this repository.

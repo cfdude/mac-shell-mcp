@@ -6,25 +6,44 @@
   "repository": "https://github.com/cfdude/mac-shell-mcp",
   "homepage": "https://github.com/cfdude/mac-shell-mcp#readme",
   "version": "2.0.0",
-  "categories": ["productivity", "automation", "terminal", "macos"],
-  "keywords": ["mcp", "shell", "macos", "terminal", "security"],
+  "categories": [
+    "productivity",
+    "automation",
+    "terminal",
+    "macos"
+  ],
+  "keywords": [
+    "mcp",
+    "shell",
+    "macos",
+    "terminal",
+    "security"
+  ],
   "requirements": {
     "node": ">=18.0.0",
-    "platform": ["darwin"]
+    "platform": [
+      "darwin"
+    ]
   },
   "installation": {
     "type": "npm",
-    "package": "@cfdude/mac-shell-mcp"
+    "package": "@the_cfdude/mac-shell-mcp"
   },
   "configuration": {
     "claude": {
       "command": "npx",
-      "args": ["-y", "@cfdude/mac-shell-mcp"],
+      "args": [
+        "-y",
+        "@the_cfdude/mac-shell-mcp"
+      ],
       "alwaysAllow": false
     },
     "roo": {
       "command": "npx",
-      "args": ["-y", "@cfdude/mac-shell-mcp"],
+      "args": [
+        "-y",
+        "@the_cfdude/mac-shell-mcp"
+      ],
       "alwaysAllow": []
     }
   },
