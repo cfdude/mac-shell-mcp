@@ -44,6 +44,12 @@ The **audit log directory and every file in it** â€” active and rotated alike â€
 - **WHEN** a request runs a write-effect command against the active log, a rotated log, or the log directory
 - **THEN** the request is refused
 
+#### Scenario: The trail as a whole is bounded, not only each file
+
+- **WHEN** rotation has produced many files
+- **THEN** a bound on the total number of files and total bytes is enforced, and the oldest records are discarded by the server itself
+- **AND** an agent issuing refused requests cannot fill the disk one record at a time, since every request is recorded
+
 #### Scenario: Rotation cannot be pumped to escape protection
 
 - **WHEN** the agent issues many refused requests to force rotation, then targets the rotated file
@@ -51,7 +57,12 @@ The **audit log directory and every file in it** â€” active and rotated alike â€
 
 ### Requirement: The server proposes configuration but cannot apply it
 
-The system SHALL offer a means of summarizing recorded history into suggested configuration, expressed in both the config-file form and the host-extension form. The system SHALL NOT apply its own suggestion, and SHALL NOT acquire any permission as a result of making one.
+The system SHALL offer a means of summarizing recorded history into suggested configuration, expressed in both the config-file form and the host-extension form. It SHALL be able to propose **permission promotions for already-permitted commands** and **roots derived from server-resolved working directories** â€” never a new command, a program directory, or any value derived from request arguments. The system SHALL NOT apply its own suggestion, and SHALL NOT acquire any permission as a result of making one.
+
+#### Scenario: A suggestion proposes something actionable
+
+- **WHEN** an already-permitted command has been repeatedly gated by `ask` and approved
+- **THEN** the suggestion may propose promoting that command's permission, which is a change a human can act on
 
 #### Scenario: A suggestion reflects observed usage
 

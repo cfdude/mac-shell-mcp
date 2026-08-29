@@ -29,17 +29,22 @@ A command's declared effect is a **label, not a guarantee**. Where a command off
 
 ### Requirement: The executed program is authorized, not only its arguments
 
-The system SHALL resolve the requested command to an absolute program path using a resolution that corrects case on case-insensitive filesystems and follows symbolic links, and SHALL perform that resolution **before** both the policy match and the in-root refusal below. The system SHALL refuse to resolve programs from any directory writable by the user the server runs as. It SHALL match policy by **resolved path**, never by basename. Programs SHALL be resolved only from configured program directories, and any program resolving inside a configured root SHALL be refused. A command carrying no declared effect SHALL be refused.
+The system SHALL resolve the requested command to an absolute program path using a resolution that corrects case on case-insensitive filesystems and follows symbolic links, and SHALL perform that resolution **before** both the policy match and the in-root refusal below. The system SHALL refuse to resolve programs from any directory to which an **unprivileged** write path exists — that is, one writable by any user other than a privileged owner. Where the server itself runs as a privileged user, as in a container, the test is ownership and mode rather than "writable by me", which would otherwise refuse every system directory. It SHALL match policy by **resolved path**, never by basename. Programs SHALL be resolved only from configured program directories, and any program resolving inside a configured root SHALL be refused. A command carrying no declared effect SHALL be refused.
 
 #### Scenario: A program written into a root cannot be executed
 
 - **WHEN** a permitted in-root write creates an executable file named after a permitted command inside a configured root, and a request asks to execute it
 - **THEN** the request is refused, because roots hold data rather than programs
 
-#### Scenario: A program directory writable by the server's own user is refused
+#### Scenario: A program directory with an unprivileged write path is refused
 
-- **WHEN** a configured program directory is writable by the user the server runs as
+- **WHEN** a configured program directory is writable other than by a privileged owner
 - **THEN** the server reports the directory as unsafe and does not resolve programs from it, because a writable program directory lets any write primitive author a program that resolves as a permitted command
+
+#### Scenario: Running privileged does not disqualify the system directories
+
+- **WHEN** the server runs as a privileged user, as in a container where the system program directories are owned by that user
+- **THEN** those directories remain usable, because the test is an unprivileged write path rather than writability by the running user
 
 #### Scenario: A symlink in a program directory cannot reach into a root
 
@@ -66,10 +71,10 @@ Scope confinement inspects the arguments of a request. A command that **discover
 - **THEN** the content outside the roots is not returned, because link-following traversal options appear in no allowlist
 - **AND** this holds even though the argument named only the root, which passed the scope check
 
-#### Scenario: A hard link inside a root does not widen scope
+#### Scenario: A multiply-linked file inside a root is refused
 
-- **WHEN** a path inside a configured root is a hard link to a file outside every root
-- **THEN** the request is refused, scope being judged on filesystem identity rather than on the path alone
+- **WHEN** a path inside a configured root has a link count greater than one, so the same content is reachable at another path that may lie outside every root
+- **THEN** the request is refused, since determining where the other links point would require scanning the filesystem
 
 ### Requirement: An argument naming a program to execute is program-authorized
 
@@ -104,7 +109,16 @@ The permitted flags SHALL be exactly:
 | `wc` | `-l`, `-w`, `-c`, `-m` |
 | `grep` | `-i`, `-n`, `-v`, `-c`, `-l`, `-w`, `-x`, `-E`, `-F`, `-r`, `-A/-B/-C <count>` |
 
-`grep -R` and `grep -S` are **excluded**: both follow symbolic links during traversal and were verified reaching a file outside the configured root, while `-r` does not follow them. `grep -f` is excluded as a path the scope check would have to cover for no benefit. No permitted flag on any command writes a file, executes a program, or names a configuration source.
+`grep -R` and `grep -S` are **excluded**, and the reason generalises: **flag semantics are implementation-dependent, so an allowlist must be conservative about any flag whose behavior varies.** Verified on one macOS machine, `-R` under `ugrep` followed symbolic links to both files and directories out of a configured root, while BSD `grep`'s `-R` did not and `-S` did — and `-S` is not even a valid option under `ugrep`. `-r` did not follow under either.
+
+Because programs are matched by resolved path, two hosts can resolve `grep` to different implementations with different flag behavior. The system SHALL therefore validate a command's flag allowlist against the **resolved program** rather than the command name, and refuse a flag the resolved program does not support.
+
+`grep -f` is excluded as a path the scope check would have to cover for no benefit. No permitted flag on any command writes a file, executes a program, or names a configuration source.
+
+#### Scenario: A flag is validated against the resolved program
+
+- **WHEN** a permitted flag is not supported by the program actually resolved for that command
+- **THEN** the request is refused rather than passed through, since flag meaning varies between implementations of the same command name
 
 #### Scenario: A link-following recursion flag is refused
 
@@ -225,9 +239,15 @@ The system SHALL treat an argument as path-shaped when it is not a flag and eith
 - **WHEN** `grep -r pattern /dir` is requested
 - **THEN** `/dir` is scope-checked and `pattern` is not
 
+#### Scenario: A path that does not yet exist is judged by its nearest existing ancestor
+
+- **WHEN** an argument names a path containing a separator that resolves to no existing entry, such as a search pattern like `src/index` or a file about to be created
+- **THEN** it is scope-checked against its nearest existing ancestor directory, and is in scope where that ancestor is inside a root
+- **AND** it is not refused merely for not existing, since refusing every such argument would make ordinary work impossible and drive a human to widen the roots
+
 #### Scenario: An argument that cannot be classified fails closed
 
-- **WHEN** an argument such as `@responsefile` or `-` cannot be confidently classified
+- **WHEN** an argument such as `@responsefile` or `-` cannot be confidently classified, and has no existing ancestor inside a root
 - **THEN** it is treated as out-of-scope rather than assumed confined
 
 ### Requirement: No tool mutates policy

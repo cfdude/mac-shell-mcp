@@ -30,6 +30,10 @@ Because the discovery order prefers the working directory over the home director
 
 Reporting the change is not sufficient on its own: this server communicates over stdio, so a warning reaches a host log rather than a person.
 
+**The record SHALL be updated only on a run that actually adopted a source.** A run that refused to adopt SHALL leave the record untouched, so that the refusal persists across every subsequent start until a human acts. Recording the refused source would adopt it on the next start; recording the built-in defaults would make the gate permanent.
+
+**Acknowledgement is an explicit out-of-band human action** — the operator states, in a location the agent cannot write, that the new source is intended. The new source SHALL NOT be able to acknowledge itself, on the same principle by which policy cannot exempt itself.
+
 An unreadable or unparseable previous-run record SHALL be treated as a changed source, not as an absent one.
 
 #### Scenario: A newly appeared higher-precedence config does not silently win
@@ -52,6 +56,17 @@ An unreadable or unparseable previous-run record SHALL be treated as a changed s
 - **WHEN** the winning source has changed and no human has acknowledged it
 - **THEN** the server runs on built-in defaults with no roots, and refuses every request while naming the unacknowledged source
 - **AND** it does not merely log a warning and continue, since a stdio server's warning reaches no person
+
+#### Scenario: The refusal persists across repeated restarts
+
+- **WHEN** the server has refused to adopt a changed source, and is restarted again with that source still present and still unacknowledged
+- **THEN** it refuses again, because the record was not updated by the refusing run
+- **AND** it does not adopt the source on any later start merely because it has now seen it before
+
+#### Scenario: A source cannot acknowledge itself
+
+- **WHEN** the newly appeared policy file declares that it is acknowledged
+- **THEN** the declaration has no effect, because acknowledgement is an out-of-band human action
 
 #### Scenario: A corrupted previous-run record is treated as a change
 
@@ -187,6 +202,20 @@ The system SHALL treat a client as interactive **only** where it declares the MC
 - **WHEN** a command whose permission is `ask` is requested and the client declared `elicitation`
 - **THEN** the human is asked before the command runs
 
+### Requirement: The constructed environment is a closed set
+
+The environment allowlist SHALL be a **closed set of server-supplied constants**, with no value passed through from the server's own environment. Where a variable is required for correct behavior it SHALL be set by the server to a known value rather than inherited.
+
+#### Scenario: Nothing is inherited, including variables that look harmless
+
+- **WHEN** any command executes
+- **THEN** its environment contains only server-supplied constants, and no variable's value originates from the server's own environment
+
+#### Scenario: An empty base environment is workable
+
+- **WHEN** each command in the default set runs with no inherited environment
+- **THEN** it functions correctly, character-counting behavior aside, so no inherited variable is required
+
 ### Requirement: A root must be a bounded working location
 
 The system SHALL refuse to accept the user's home directory or the filesystem root as a configured root, and SHALL report at startup any configured root containing well-known credential locations. A root is intended to be a project or working directory.
@@ -198,8 +227,8 @@ The system SHALL refuse to accept the user's home directory or the filesystem ro
 
 #### Scenario: A root containing credentials is reported
 
-- **WHEN** a configured root contains a well-known credential location such as an `.ssh` or `.aws` directory
-- **THEN** the server reports it at startup, because confinement makes everything inside a root freely readable
+- **WHEN** a configured root contains a well-known credential location — an `.ssh` or `.aws` directory, an `.env` file, a `.git/config` (whose remotes may embed tokens), an `.npmrc`, or a private-key file
+- **THEN** the server reports each at startup, because confinement makes everything inside a root freely readable by a single recursive search
 
 ### Requirement: A fresh installation is safe and self-explanatory
 

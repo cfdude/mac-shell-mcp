@@ -8,6 +8,11 @@ Runs authorized commands without a shell and returns results an agent can act on
 
 The system SHALL execute commands by passing the program and its argument vector directly to the operating system, and SHALL NOT enable shell interpretation. Argument content SHALL be passed through uninterpreted.
 
+#### Scenario: No internal operation uses a shell either
+
+- **WHEN** the system expands glob patterns, or performs any other internal operation on a request
+- **THEN** it does so without invoking a shell, since a shell used internally reintroduces the interpretation this capability exists to remove
+
 #### Scenario: Shell metacharacters are inert
 
 - **WHEN** `echo` is executed with the single argument `hello; id > /tmp/PWNED.txt`
@@ -47,7 +52,7 @@ The system SHALL return the standard output, standard error, and exit code of ev
 
 ### Requirement: Output is capped and truncated rather than discarded
 
-The system SHALL apply a configurable maximum output size, and where a command exceeds it SHALL return the output collected up to that point, marked as truncated, rather than failing.
+The system SHALL apply a configurable maximum output size, and where a command exceeds it SHALL **stop collecting** and terminate the command, returning what was collected, marked as truncated, rather than failing. Buffering the whole output and trimming afterwards does not satisfy this: the cap exists to bound memory, so reading an arbitrarily large file must not first consume it.
 
 #### Scenario: Oversized output truncates
 
@@ -99,6 +104,15 @@ The system SHALL support composing commands by connecting each stage's standard 
 
 - **WHEN** a pipeline requests two permitted read-effect commands operating inside configured roots
 - **THEN** the first stage's output is supplied to the second, and the final stage's result is returned
+
+### Requirement: Concurrent execution is bounded
+
+The system SHALL bound the number of commands executing simultaneously, so that the memory and process cost of concurrent requests cannot be multiplied without limit.
+
+#### Scenario: Concurrency is capped
+
+- **WHEN** more commands are requested simultaneously than the configured limit
+- **THEN** the excess are queued or refused rather than all executing at once
 
 ### Requirement: Execution is bounded by a timeout
 
