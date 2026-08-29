@@ -74,6 +74,14 @@ A change in which source supplies policy is reported at startup and not adopted 
 
 Interactivity was to be inferred from declared client capabilities. Of the three MCP offers, `roots` and `elicitation` are absent on the flagship host and `sampling` asserts that **a model** will answer — so inferring interactivity from capabilities generally would route the human gate to another model. Only `elicitation` counts; everything else means `ask` denies.
 
+### Policy is never read from the working directory
+
+An earlier draft placed a working-directory config above the home file, so a project could carry its own policy. Defending that required a change-detection gate — record the winning source, refuse an unacknowledged change, provide an out-of-band acknowledgement path — and that machinery generated more defects than it closed: an unacknowledgeable environment branch, a global record that refused forever when alternating between projects, an MCPB user with no terminal permanently bricked, and a first-run path that adopted a cloned repository's policy unattended.
+
+Removing the slot removes all of it. The threat it defended against — the agent planting a config for the next start — is already covered twice: every discovery location and its ancestors are protected, and the default command set contains no write primitive at all. What the gate uniquely caught was a *hostile repository carrying a config*, and the answer to that is not a state machine; it is not reading policy from the working directory.
+
+Per-project configuration is served by the explicit path, which is what a container image or a host configuration sets deliberately.
+
 ## Risks / Trade-offs
 
 - **Path detection is heuristic** → fails closed to out-of-scope; documented in `SECURITY.md` as a known limit rather than hidden. Attached flag values (`--output=/etc/x`, `-o/etc/x`) are split and scope-checked, because a value fused to a flag is never "not a flag" and so never reached the heuristic at all.

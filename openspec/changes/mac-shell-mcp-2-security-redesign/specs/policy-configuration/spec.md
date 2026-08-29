@@ -6,7 +6,9 @@ Loads the server's authorization policy from a file that the server itself can n
 
 ### Requirement: Policy is discovered in a fixed order and never merged
 
-The system SHALL locate its policy by checking, in order: an explicitly configured path, a file in the working directory, a file in the user's home configuration directory, host-supplied environment configuration, and finally built-in defaults. The first source found SHALL be used in full. Sources SHALL NOT be merged.
+The system SHALL locate its policy by checking, in order: an explicitly configured path, a file in the user's home configuration directory, host-supplied environment configuration, and finally built-in defaults. The first source found SHALL be used in full. Sources SHALL NOT be merged.
+
+**Policy is never read from the working directory.** A working-directory source would let a cloned repository supply the policy governing the agent that opens it, and defending that with a change-detection gate proved to generate more defects than it closed. Per-project configuration is served by the explicit path, which a container image or host configuration sets deliberately.
 
 #### Scenario: A config file supersedes host environment configuration
 
@@ -24,84 +26,6 @@ The system SHALL locate its policy by checking, in order: an explicitly configur
 - **WHEN** the server starts
 - **THEN** it reports which policy source was used
 
-### Requirement: A policy appearing at a new location is reported before it takes effect
-
-Because the discovery order prefers the working directory over the home directory, a file created inside a working directory would silently take precedence on the next start. The system SHALL record, on each run, both which source supplied policy **and its filesystem identity**, in a record **keyed by discovery location** at a documented default location that is itself protected. Keying by location is required because discovery depends on the working directory: a single global record would refuse on every start for anyone alternating between two projects.
-
-**This gate applies to file sources only.** Host-supplied environment configuration is exempt, because setting it is already an out-of-band human action — the operator edits the host's own configuration — and it has no filesystem identity to compare. Applying the gate there would also be unacknowledgeable, since the acknowledging human's shell does not hold the host's environment. Where either the winning source or its identity differs from the previously recorded run, the system SHALL NOT adopt the new source. It SHALL instead fall back to the **built-in defaults — the default command set and no configured roots** — and refuse every request with a message naming the unacknowledged source and how to acknowledge it.
-
-Reporting the change is not sufficient on its own: this server communicates over stdio, so a warning reaches a host log rather than a person.
-
-**The record SHALL be updated only on a run that actually adopted a source.** A run that refused to adopt SHALL leave the record untouched, so that the refusal persists across every subsequent start until a human acts. Recording the refused source would adopt it on the next start; recording the built-in defaults would make the gate permanent.
-
-**Acknowledgement is performed by a human running the server's own command-line acknowledgement subcommand**, which accepts the source to acknowledge explicitly and records it with its identity into the previous-run record, then exits. It SHALL NOT be reachable through any MCP tool, so the agent cannot invoke it. The new source SHALL NOT be able to acknowledge itself, on the same principle by which policy cannot exempt itself.
-
-**An absent previous-run record is a first run, not a change**: the system SHALL adopt the winning source and write the record — **except where the winning source is the working-directory file**, which SHALL always require acknowledgement, including on a first run. A repository can carry a policy file, so a fresh install whose first session opens a cloned repository would otherwise adopt a policy that project supplied, unattended. That file could name a legitimate program directory and admit an interpreter with an inline-code flag, which no later rule catches because inline code is not a script inside a root. An **unreadable or unparseable** record, by contrast, SHALL be treated as a changed source.
-
-#### Scenario: A newly appeared higher-precedence config does not silently win
-
-- **WHEN** policy was previously supplied by the home configuration file, and a config file now exists in the working directory
-- **THEN** startup reports that the winning source changed and does not adopt the new file unattended
-
-#### Scenario: Changed environment configuration is adopted without acknowledgement
-
-- **WHEN** policy is supplied by host environment configuration and its content differs from the previous run
-- **THEN** it is adopted, because only a human with host access can change it — the same trust level acknowledgement establishes
-- **AND** a user editing the host's configuration form is therefore never left with a server that will not start
-
-#### Scenario: Replacing the file at the same path is still detected
-
-- **WHEN** the winning source is at the same path as the previous run but its filesystem identity has changed
-- **THEN** the change is reported, because keying on the discovery slot alone would miss a replaced file
-
-#### Scenario: An unchanged source starts normally
-
-- **WHEN** the winning source is the same as the previous run's, with the same filesystem identity
-- **THEN** startup proceeds without prompting
-
-#### Scenario: An unacknowledged change refuses every request
-
-- **WHEN** the winning source has changed and no human has acknowledged it
-- **THEN** the server runs on built-in defaults with no roots, and refuses every request while naming the unacknowledged source
-- **AND** it does not merely log a warning and continue, since a stdio server's warning reaches no person
-
-#### Scenario: The refusal persists across repeated restarts
-
-- **WHEN** the server has refused to adopt a changed source, and is restarted again with that source still present and still unacknowledged
-- **THEN** it refuses again, because the record was not updated by the refusing run
-- **AND** it does not adopt the source on any later start merely because it has now seen it before
-
-#### Scenario: A source cannot acknowledge itself
-
-- **WHEN** the newly appeared policy file declares that it is acknowledged
-- **THEN** the declaration has no effect, because acknowledgement is an out-of-band human action
-
-#### Scenario: A human can acknowledge and the server then starts normally
-
-- **WHEN** an operator runs the acknowledgement subcommand while the changed source is present
-- **THEN** the record is updated and the next start adopts that source and serves requests normally
-- **AND** no MCP tool offers this action
-
-#### Scenario: A first run adopts a home or explicit source and records it
-
-- **WHEN** the server starts with no previous-run record and the winning source is the explicit path, the home file, or host environment configuration
-- **THEN** it adopts that source and writes the record, rather than refusing forever
-
-#### Scenario: A first run does NOT adopt a working-directory config
-
-- **WHEN** the server starts with no previous-run record and the winning source is a policy file in the working directory
-- **THEN** it refuses to adopt it and requires acknowledgement, because a cloned repository can carry that file and the first start would otherwise honour a policy the project supplied
-
-#### Scenario: Alternating between projects does not refuse forever
-
-- **WHEN** the server is started in one project, then another, then the first again, each with its own acknowledged configuration
-- **THEN** each start finds the record for that location and proceeds, because the record is keyed by discovery location
-
-#### Scenario: A corrupted previous-run record is treated as a change
-
-- **WHEN** the previous-run record cannot be read or parsed
-- **THEN** the source is treated as changed rather than as unrecorded
-
 ### Requirement: Policy is immutable for the lifetime of the process
 
 The system SHALL read policy once at startup and SHALL NOT re-read or modify it while running.
@@ -117,10 +41,9 @@ The system SHALL refuse every request that **would write to, create, replace, or
 
 - any path in the policy discovery order — not only the active one — or **any ancestor directory** of such a path;
 - any configured **program directory**, or any entry within it;
-- the **audit log directory** and every file in it, not only the currently active log file;
-- the **previous-run record**.
+- the **audit log directory** and every file in it, not only the currently active log file.
 
-Each of these SHALL have a documented default location, since a path the system cannot name is a path it cannot protect. By default the audit log directory, the previous-run record, and the home configuration file all reside under a single `mac-shell-mcp` directory in the user's home configuration area.
+Each of these SHALL have a documented default location, since a path the system cannot name is a path it cannot protect. By default the audit log directory and the home configuration file both reside under a single `mac-shell-mcp` directory in the user's home configuration area.
 
 This SHALL hold regardless of configured roots, regardless of the command's permissions, and regardless of any exemption expressed in policy itself.
 

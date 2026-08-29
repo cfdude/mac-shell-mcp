@@ -43,6 +43,10 @@ context: |
   - Confined tools use effect x scope; `execute_external_command` is the only
     route outside the roots.
   - The config file is canonical; the MCPB manifest is one delivery mechanism.
+  - Policy is NEVER read from the working directory -- a cloned repo must not be
+    able to supply the policy governing the agent that opens it.
+  - A request supplying no cwd uses the FIRST CONFIGURED ROOT, never the server
+    process's cwd (Claude Desktop provides no project context).
   - Protection is keyed on filesystem identity (st_dev, st_ino) captured at
     startup AND by path, covering every discovery location and its ancestors,
     every program directory, and the whole audit log directory. Non-overridable

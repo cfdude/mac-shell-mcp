@@ -62,7 +62,13 @@ The system SHALL apply a configurable maximum output size, and where a command e
 
 ### Requirement: Requests may specify working directory, standard input, and glob expansion
 
-The system SHALL accept a working directory, a text value supplied to the command's standard input, and an explicit request for glob expansion. The working directory SHALL be confined to the configured roots for the confined and pipeline tools, and MAY lie outside them for the external tool, which exists to reach outside. Glob expansion SHALL be confined for the confined and pipeline tools, and SHALL follow the request's scope for the external tool.
+The system SHALL accept a working directory, a text value supplied to the command's standard input, and an explicit request for glob expansion. **Where a request supplies no working directory, the system SHALL use the first configured root**, never the server process's own working directory — the server is launched by a host that may set that to anything, and a host such as Claude Desktop provides no project context at all, so inheriting it would place every request outside the roots and refuse all work. The working directory SHALL be confined to the configured roots for the confined and pipeline tools, and MAY lie outside them for the external tool, which exists to reach outside. Glob expansion SHALL be confined for the confined and pipeline tools, and SHALL follow the request's scope for the external tool.
+
+#### Scenario: A request omitting a working directory runs in the first root
+
+- **WHEN** a request supplies no working directory
+- **THEN** the first configured root is used
+- **AND** the server process's own working directory is never inherited
 
 #### Scenario: The confined tool refuses an outside working directory
 
