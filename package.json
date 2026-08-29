@@ -1,5 +1,5 @@
 {
-  "name": "mac-shell-mcp",
+  "name": "@cfdude/mac-shell-mcp",
   "version": "2.0.0",
   "description": "MCP server for macOS shell access, confined to configured roots with no shell interpretation",
   "type": "module",
@@ -8,7 +8,9 @@
     "mac-shell-mcp": "./build/index.js"
   },
   "files": [
-    "build"
+    "build",
+    ".mac-shell-mcp.sample.json",
+    "manifest.json"
   ],
   "scripts": {
     "build": "tsc && chmod +x build/index.js",

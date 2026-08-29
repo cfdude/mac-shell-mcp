@@ -1,0 +1,81 @@
+{
+  "manifest_version": "0.4",
+  "name": "mac-shell-mcp",
+  "display_name": "Mac Shell",
+  "version": "2.0.0",
+  "description": "Run a small set of read-only shell commands, confined to directories you choose.",
+  "long_description": "Exposes a deliberately small set of commands (ls, pwd, echo, cat, head, tail, wc, grep) confined to directories you nominate. No shell is ever invoked, the child environment is constructed rather than inherited, and no tool can change the policy at runtime. find, git, rm and interpreters are absent by default.",
+  "author": {
+    "name": "Rob Sherman",
+    "url": "https://github.com/cfdude"
+  },
+  "homepage": "https://github.com/cfdude/mac-shell-mcp",
+  "documentation": "https://github.com/cfdude/mac-shell-mcp#readme",
+  "support": "https://github.com/cfdude/mac-shell-mcp/issues",
+  "license": "MIT",
+  "keywords": ["shell", "macos", "terminal", "security"],
+  "server": {
+    "type": "node",
+    "entry_point": "build/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/build/index.js"],
+      "env": {
+        "MAC_SHELL_ROOTS": "${user_config.allowed_roots}",
+        "MAC_SHELL_COMMANDS": "${user_config.allowed_commands}",
+        "MAC_SHELL_AUDIT_DIR": "${user_config.audit_log_dir}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "execute_command",
+      "description": "Run a permitted command confined to the configured roots."
+    },
+    {
+      "name": "execute_external_command",
+      "description": "Run a permitted command outside the roots. Requires an interactive client."
+    },
+    {
+      "name": "execute_pipeline",
+      "description": "Compose read-only commands, wiring stdout to stdin in process."
+    },
+    {
+      "name": "get_policy",
+      "description": "Report the effective policy."
+    },
+    {
+      "name": "suggest_policy_config",
+      "description": "Summarize recorded usage into configuration a human may apply."
+    }
+  ],
+  "user_config": {
+    "allowed_roots": {
+      "type": "directory",
+      "title": "Allowed directories",
+      "description": "Directories the agent may work in. Everything inside one is freely readable, so choose project directories rather than your home folder.",
+      "multiple": true,
+      "required": false,
+      "default": []
+    },
+    "allowed_commands": {
+      "type": "string",
+      "title": "Allowed commands",
+      "description": "Comma-separated. Defaults to a read-only set that cannot write, execute, or read configuration.",
+      "required": false,
+      "default": "ls,pwd,echo,cat,head,tail,wc,grep"
+    },
+    "audit_log_dir": {
+      "type": "directory",
+      "title": "Audit log directory",
+      "description": "Where the record of every command is written. Protected from modification by the server itself.",
+      "required": false
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin"],
+    "runtimes": {
+      "node": ">=18.0.0"
+    }
+  }
+}
