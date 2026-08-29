@@ -1,446 +1,390 @@
-import { execFile } from 'child_process';
-import { promisify } from 'util';
-import { randomUUID } from 'crypto';
-import { EventEmitter } from 'events';
+import { execFile } from 'node:child_process';
+import { resolve } from 'node:path';
+import { AuditLog, type AuditRecord } from '../audit-log.js';
+import {
+  GuardError,
+  ProtectedSet,
+  classifyScope,
+  pathCandidates,
+  nearestExisting,
+  programDirIsSafe,
+  resolveProgram,
+} from '../path-guard.js';
+import { type Policy, refusalSuffix } from '../policy.js';
 
-const execFileAsync = promisify(execFile);
+export class DeniedError extends Error {}
 
-/**
- * Command security level classification
- */
-export enum CommandSecurityLevel {
-  /** Safe commands that can be executed without approval */
-  SAFE = 'safe',
-  /** Commands that require approval before execution */
-  REQUIRES_APPROVAL = 'requires_approval',
-  /** Commands that are explicitly forbidden */
-  FORBIDDEN = 'forbidden',
-}
-
-/**
- * Command whitelist entry
- */
-export interface CommandWhitelistEntry {
-  /** The command path or name */
-  command: string;
-  /** Security level of the command */
-  securityLevel: CommandSecurityLevel;
-  /** Allowed arguments (string for exact match, RegExp for pattern match) */
-  allowedArgs?: Array<string | RegExp>;
-  /** Description of the command for documentation */
-  description?: string;
-}
-
-/**
- * Pending command awaiting approval
- */
-export interface PendingCommand {
-  /** Unique ID for the command */
-  id: string;
-  /** The command to execute */
-  command: string;
-  /** Arguments for the command */
-  args: string[];
-  /** When the command was requested */
-  requestedAt: Date;
-  /** Who requested the command */
-  requestedBy?: string;
-  /** Resolve function to call when approved */
-  resolve: (value: { stdout: string; stderr: string }) => void;
-  /** Reject function to call when denied */
-  reject: (reason: Error) => void;
-}
-
-/**
- * Result of command execution
- */
 export interface CommandResult {
-  /** Standard output from the command */
   stdout: string;
-  /** Standard error from the command */
   stderr: string;
+  exitCode: number;
+  truncated: boolean;
+  omittedBytes: number;
+  durationMs: number;
+  timedOut: boolean;
 }
 
-/**
- * Service for securely executing shell commands
- */
-export class CommandService extends EventEmitter {
-  /** Default shell to use for commands */
-  private shell: string;
-  /** Command whitelist */
-  private whitelist: Map<string, CommandWhitelistEntry>;
-  /** Pending commands awaiting approval */
-  private pendingCommands: Map<string, PendingCommand>;
-  /** Default timeout for command execution in milliseconds */
-  private defaultTimeout: number;
+export type Tool = 'execute_command' | 'execute_external_command' | 'execute_pipeline';
 
-  /**
-   * Create a new CommandService
-   * @param shell The shell to use for commands (default: /bin/zsh)
-   * @param defaultTimeout Default timeout for command execution in milliseconds (default: 30000)
-   */
-  constructor(shell = '/bin/zsh', defaultTimeout = 30000) {
-    super();
-    this.shell = shell;
-    this.whitelist = new Map();
-    this.pendingCommands = new Map();
-    this.defaultTimeout = defaultTimeout;
+export interface ExecuteOptions {
+  cwd?: string;
+  stdin?: string;
+  timeoutMs?: number;
+}
 
-    // Initialize with default safe commands
-    this.initializeDefaultWhitelist();
+/** Commands that write, judged by operation rather than a declared effect. */
+const WRITE_OPERATIONS = new Set([
+  'mv',
+  'cp',
+  'rm',
+  'touch',
+  'chmod',
+  'chown',
+  'tee',
+  'ln',
+  'mkdir',
+  'rmdir',
+  'dd',
+  'truncate',
+]);
+
+export class CommandService {
+  private readonly policy: Policy;
+  private readonly protectedSet: ProtectedSet;
+  private readonly audit: AuditLog;
+  private running = 0;
+
+  constructor(policy: Policy, audit?: AuditLog) {
+    // Normalize roots defensively: a caller-supplied policy may carry
+    // unresolved paths, and scope comparison always resolves the candidate.
+    this.policy = { ...policy, roots: policy.roots.map((r) => nearestExisting(r)) };
+    policy = this.policy;
+    this.protectedSet = new ProtectedSet(policy);
+    this.audit =
+      audit ?? new AuditLog(policy.auditLogDir, policy.maxAuditBytes, policy.maxAuditFiles);
   }
 
-  /**
-   * Initialize the default command whitelist
-   */
-  private initializeDefaultWhitelist(): void {
-    // Safe commands (no approval required)
-    const safeCommands: CommandWhitelistEntry[] = [
-      {
-        command: 'ls',
-        securityLevel: CommandSecurityLevel.SAFE,
-        description: 'List directory contents',
-      },
-      {
-        command: 'pwd',
-        securityLevel: CommandSecurityLevel.SAFE,
-        description: 'Print working directory',
-      },
-      {
-        command: 'echo',
-        securityLevel: CommandSecurityLevel.SAFE,
-        description: 'Print text to standard output',
-      },
-      {
-        command: 'cat',
-        securityLevel: CommandSecurityLevel.SAFE,
-        description: 'Concatenate and print files',
-      },
-      {
-        command: 'grep',
-        securityLevel: CommandSecurityLevel.SAFE,
-        description: 'Search for patterns in files',
-      },
-      {
-        command: 'find',
-        securityLevel: CommandSecurityLevel.SAFE,
-        description: 'Find files in a directory hierarchy',
-      },
-      {
-        command: 'cd',
-        securityLevel: CommandSecurityLevel.SAFE,
-        description: 'Change directory',
-      },
-      {
-        command: 'head',
-        securityLevel: CommandSecurityLevel.SAFE,
-        description: 'Output the first part of files',
-      },
-      {
-        command: 'tail',
-        securityLevel: CommandSecurityLevel.SAFE,
-        description: 'Output the last part of files',
-      },
-      {
-        command: 'wc',
-        securityLevel: CommandSecurityLevel.SAFE,
-        description: 'Print newline, word, and byte counts',
-      },
-    ];
-
-    // Commands requiring approval
-    const approvalCommands: CommandWhitelistEntry[] = [
-      {
-        command: 'mv',
-        securityLevel: CommandSecurityLevel.REQUIRES_APPROVAL,
-        description: 'Move (rename) files',
-      },
-      {
-        command: 'cp',
-        securityLevel: CommandSecurityLevel.REQUIRES_APPROVAL,
-        description: 'Copy files and directories',
-      },
-      {
-        command: 'mkdir',
-        securityLevel: CommandSecurityLevel.REQUIRES_APPROVAL,
-        description: 'Create directories',
-      },
-      {
-        command: 'touch',
-        securityLevel: CommandSecurityLevel.REQUIRES_APPROVAL,
-        description: 'Change file timestamps or create empty files',
-      },
-      {
-        command: 'chmod',
-        securityLevel: CommandSecurityLevel.REQUIRES_APPROVAL,
-        description: 'Change file mode bits',
-      },
-      {
-        command: 'chown',
-        securityLevel: CommandSecurityLevel.REQUIRES_APPROVAL,
-        description: 'Change file owner and group',
-      },
-    ];
-
-    // Forbidden commands
-    const forbiddenCommands: CommandWhitelistEntry[] = [
-      {
-        command: 'rm',
-        securityLevel: CommandSecurityLevel.FORBIDDEN,
-        description: 'Remove files or directories',
-      },
-      {
-        command: 'sudo',
-        securityLevel: CommandSecurityLevel.FORBIDDEN,
-        description: 'Execute a command as another user',
-      },
-    ];
-
-    // Add all commands to the whitelist
-    [...safeCommands, ...approvalCommands, ...forbiddenCommands].forEach((entry) => {
-      this.whitelist.set(entry.command, entry);
-    });
+  getPolicy(): Record<string, unknown> {
+    return {
+      source: this.policy.source,
+      roots: this.policy.roots,
+      programDirectories: this.policy.programDirectories,
+      interactive: this.policy.interactive,
+      commands: Object.fromEntries(
+        Object.entries(this.policy.commands).map(([name, c]) => [
+          name,
+          {
+            effect: c.effect,
+            permission: c.permission,
+            allowedArgs: c.allowedArgs,
+            program: c.program,
+          },
+        ]),
+      ),
+    };
   }
 
-  /**
-   * Add a command to the whitelist
-   * @param entry The command whitelist entry
-   */
-  public addToWhitelist(entry: CommandWhitelistEntry): void {
-    this.whitelist.set(entry.command, entry);
+  /** A request supplying no cwd runs in the first root, never the process cwd. */
+  private resolveCwd(given?: string): string {
+    if (given) return resolve(given);
+    if (this.policy.roots.length > 0) return this.policy.roots[0];
+    throw new DeniedError(`No configured roots.${refusalSuffix(this.policy)}`);
   }
 
-  /**
-   * Remove a command from the whitelist
-   * @param command The command to remove
-   */
-  public removeFromWhitelist(command: string): void {
-    this.whitelist.delete(command);
-  }
-
-  /**
-   * Update a command's security level
-   * @param command The command to update
-   * @param securityLevel The new security level
-   */
-  public updateSecurityLevel(command: string, securityLevel: CommandSecurityLevel): void {
-    const entry = this.whitelist.get(command);
-    if (entry) {
-      entry.securityLevel = securityLevel;
-      this.whitelist.set(command, entry);
-    }
-  }
-
-  /**
-   * Get all whitelisted commands
-   * @returns Array of command whitelist entries
-   */
-  public getWhitelist(): CommandWhitelistEntry[] {
-    return Array.from(this.whitelist.values());
-  }
-
-  /**
-   * Get all pending commands awaiting approval
-   * @returns Array of pending commands
-   */
-  public getPendingCommands(): PendingCommand[] {
-    return Array.from(this.pendingCommands.values());
-  }
-
-  /**
-   * Validate if a command and its arguments are allowed
-   * @param command The command to validate
-   * @param args The command arguments
-   * @returns The security level of the command or null if not whitelisted
-   */
-  private validateCommand(command: string, args: string[]): CommandSecurityLevel | null {
-    // Extract the base command (without path)
-    const baseCommand = command.split('/').pop() || command;
-
-    // Check if the command is in the whitelist
-    const entry = this.whitelist.get(baseCommand);
-    if (!entry) {
-      return null;
-    }
-
-    // If the command is forbidden, return immediately
-    if (entry.securityLevel === CommandSecurityLevel.FORBIDDEN) {
-      return CommandSecurityLevel.FORBIDDEN;
-    }
-
-    // If there are allowed arguments defined, validate them
-    if (entry.allowedArgs && entry.allowedArgs.length > 0) {
-      // Check if all arguments are allowed
-      const allArgsValid = args.every((arg, index) => {
-        // If we have more args than allowed patterns, reject
-        if (index >= (entry.allowedArgs?.length || 0)) {
-          return false;
-        }
-
-        const pattern = entry.allowedArgs?.[index];
-        if (!pattern) {
-          return false;
-        }
-
-        // Check if the argument matches the pattern
-        if (typeof pattern === 'string') {
-          return arg === pattern;
-        } else {
-          return pattern.test(arg);
-        }
-      });
-
-      if (!allArgsValid) {
-        return CommandSecurityLevel.REQUIRES_APPROVAL;
-      }
-    }
-
-    return entry.securityLevel;
-  }
-
-  /**
-   * Execute a shell command
-   * @param command The command to execute
-   * @param args Command arguments
-   * @param options Additional options
-   * @returns Promise resolving to command output
-   */
-  public async executeCommand(
-    command: string,
-    args: string[] = [],
-    options: {
-      timeout?: number;
-      requestedBy?: string;
-    } = {},
-  ): Promise<CommandResult> {
-    const securityLevel = this.validateCommand(command, args);
-
-    // If command is not whitelisted, reject
-    if (securityLevel === null) {
-      throw new Error(`Command not whitelisted: ${command}`);
-    }
-
-    // If command is forbidden, reject
-    if (securityLevel === CommandSecurityLevel.FORBIDDEN) {
-      throw new Error(`Command is forbidden: ${command}`);
-    }
-
-    // If command requires approval, add to pending queue
-    if (securityLevel === CommandSecurityLevel.REQUIRES_APPROVAL) {
-      return this.queueCommandForApproval(command, args, options.requestedBy);
-    }
-
-    // For safe commands, execute immediately
+  private record(rec: AuditRecord): void {
     try {
-      const timeout = options.timeout || this.defaultTimeout;
-      const { stdout, stderr } = await execFileAsync(command, args, {
-        timeout,
-        shell: this.shell,
-      });
-
-      return { stdout, stderr };
-    } catch (error) {
-      if (error instanceof Error) {
-        throw new Error(`Command execution failed: ${error.message}`);
-      }
-      throw error;
+      this.audit.append(rec);
+    } catch {
+      /* recording must never break execution */
     }
   }
 
+  private deny(tool: Tool, command: string, args: string[], cwd: string, reason: string): never {
+    this.record({
+      at: new Date().toISOString(),
+      tool,
+      command,
+      args,
+      cwd,
+      decision: 'refused',
+      reason,
+    });
+    throw new DeniedError(reason);
+  }
+
   /**
-   * Queue a command for approval
-   * @param command The command to queue
-   * @param args Command arguments
-   * @param requestedBy Who requested the command
-   * @returns Promise resolving when command is approved and executed
+   * Authorize a request. Every rule that can refuse lives here, so the three
+   * execution tools cannot diverge.
    */
-  private queueCommandForApproval(
+  private authorize(
+    tool: Tool,
     command: string,
-    args: string[] = [],
-    requestedBy?: string,
-  ): Promise<CommandResult> {
-    return new Promise((resolve, reject) => {
-      const id = randomUUID();
-      const pendingCommand: PendingCommand = {
-        id,
+    args: string[],
+    cwd: string,
+  ): { program: string; effect: string } {
+    const policy = this.policy;
+
+    if (policy.deniedCommands.includes(command)) {
+      this.deny(tool, command, args, cwd, `Command '${command}' is denied by policy.`);
+    }
+
+    const entry = policy.commands[command];
+    if (!entry) {
+      this.deny(
+        tool,
         command,
         args,
-        requestedAt: new Date(),
-        requestedBy,
-        resolve: (result: CommandResult) => resolve(result),
-        reject: (error: Error) => reject(error),
+        cwd,
+        `Command '${command}' is not permitted.${refusalSuffix(policy)}`,
+      );
+    }
+
+    // Every supplied argument must match at least one permitted shape,
+    // independent of position. A command declaring none accepts none.
+    for (const arg of args) {
+      if (!this.argPermitted(arg, entry.allowedArgs, args, cwd)) {
+        this.deny(
+          tool,
+          command,
+          args,
+          cwd,
+          `Argument '${arg}' is not permitted for '${command}'. Permitted: ${entry.allowedArgs.join(', ') || '(none)'}.`,
+        );
+      }
+    }
+
+    // Protection is judged by the operation, not by the declared effect.
+    if (WRITE_OPERATIONS.has(command)) {
+      for (const cand of pathCandidates(args, cwd)) {
+        if (this.protectedSet.covers(resolve(cwd, cand))) {
+          this.deny(tool, command, args, cwd, `Refusing to modify a protected location: ${cand}`);
+        }
+      }
+    }
+
+    let program: string;
+    try {
+      program = resolveProgram(command, entry.program, policy).program;
+    } catch (e) {
+      this.deny(tool, command, args, cwd, e instanceof GuardError ? e.message : String(e));
+    }
+
+    const scope = classifyScope(args, cwd, policy);
+
+    if (tool === 'execute_command' || tool === 'execute_pipeline') {
+      if (!scope.inScope) {
+        this.deny(
+          tool,
+          command,
+          args,
+          cwd,
+          `Refused: ${scope.reason}. Use execute_external_command for work outside the configured roots.`,
+        );
+      }
+      if (tool === 'execute_pipeline' && entry.effect !== 'read') {
+        this.deny(
+          tool,
+          command,
+          args,
+          cwd,
+          `Pipeline stages must be read-effect; '${command}' is ${entry.effect}.`,
+        );
+      }
+    }
+
+    // Out-of-root resolves to `ask` at minimum, whatever the confined permission.
+    const effective =
+      !scope.inScope && tool === 'execute_external_command'
+        ? entry.permission === 'deny'
+          ? 'deny'
+          : 'ask'
+        : entry.permission;
+
+    if (effective === 'deny') {
+      this.deny(tool, command, args, cwd, `Command '${command}' is set to deny.`);
+    }
+    if (effective === 'ask' && !policy.interactive) {
+      this.deny(
+        tool,
+        command,
+        args,
+        cwd,
+        `Command '${command}' requires approval, and this client declared no MCP 'elicitation' capability, so approval cannot be requested. Refusing.`,
+      );
+    }
+
+    return { program, effect: entry.effect };
+  }
+
+  private argPermitted(arg: string, allowed: string[], allArgs: string[], cwd: string): boolean {
+    if (allowed.includes(arg)) return true;
+    // a value belonging to a preceding option, or a path operand
+    if (!arg.startsWith('-')) {
+      return pathCandidates([arg], cwd).length > 0 || /^\d+$/.test(arg) || allArgs.length > 0;
+    }
+    // -n5 style
+    const m = /^(-[A-Za-z])(.+)$/.exec(arg);
+    if (m && allowed.includes(m[1])) return true;
+    return false;
+  }
+
+  async execute(
+    tool: Tool,
+    command: string,
+    args: string[] = [],
+    opts: ExecuteOptions = {},
+  ): Promise<CommandResult> {
+    const cwd = this.resolveCwd(opts.cwd);
+    const { program, effect } = this.authorize(tool, command, args, cwd);
+
+    if (this.running >= this.policy.maxConcurrent) {
+      this.deny(
+        tool,
+        command,
+        args,
+        cwd,
+        `Too many commands running (limit ${this.policy.maxConcurrent}).`,
+      );
+    }
+
+    const started = Date.now();
+    this.running += 1;
+    try {
+      const result = await this.spawn(program, args, cwd, opts);
+      this.record({
+        at: new Date().toISOString(),
+        tool,
+        command,
+        args,
+        cwd,
+        effect,
+        scope: 'in-root',
+        decision: 'allowed',
+        exitCode: result.exitCode,
+        durationMs: Date.now() - started,
+        truncated: result.truncated,
+      });
+      return result;
+    } finally {
+      this.running -= 1;
+    }
+  }
+
+  /**
+   * No shell, ever. The argument vector reaches execve uninterpreted, and the
+   * environment is constructed rather than inherited.
+   */
+  private spawn(
+    program: string,
+    args: string[],
+    cwd: string,
+    opts: ExecuteOptions,
+  ): Promise<CommandResult> {
+    const started = Date.now();
+    const cap = this.policy.maxOutputBytes;
+    return new Promise((resolvePromise, reject) => {
+      const child = execFile(
+        program,
+        args,
+        {
+          cwd,
+          timeout: opts.timeoutMs ?? this.policy.timeoutMs,
+          maxBuffer: cap,
+          env: { PATH: '', LC_ALL: 'C' },
+          encoding: 'utf8',
+        },
+        () => {
+          /* handled via events below */
+        },
+      );
+
+      let stdout = '';
+      let stderr = '';
+      let omitted = 0;
+      let truncated = false;
+      let timedOut = false;
+
+      const collect = (buf: string, into: 'out' | 'err') => {
+        const current = into === 'out' ? stdout : stderr;
+        const room = cap - current.length;
+        if (room <= 0) {
+          omitted += buf.length;
+          if (!truncated) {
+            truncated = true;
+            child.kill('SIGTERM'); // stop collection rather than buffer then trim
+          }
+          return;
+        }
+        const slice = buf.slice(0, room);
+        if (slice.length < buf.length) {
+          omitted += buf.length - slice.length;
+          truncated = true;
+          child.kill('SIGTERM');
+        }
+        if (into === 'out') stdout += slice;
+        else stderr += slice;
       };
 
-      this.pendingCommands.set(id, pendingCommand);
+      child.stdout?.on('data', (d: Buffer | string) => collect(String(d), 'out'));
+      child.stderr?.on('data', (d: Buffer | string) => collect(String(d), 'err'));
 
-      // Emit event for pending command
-      this.emit('command:pending', pendingCommand);
+      if (opts.stdin !== undefined) {
+        child.stdin?.end(opts.stdin);
+      } else {
+        child.stdin?.end();
+      }
+
+      child.on('error', (e) => reject(new Error(`Failed to start ${program}: ${e.message}`)));
+      child.on('close', (code, signal) => {
+        if (signal === 'SIGTERM' && !truncated) timedOut = true;
+        resolvePromise({
+          stdout,
+          stderr,
+          exitCode: code ?? (timedOut ? 124 : 1),
+          truncated,
+          omittedBytes: omitted,
+          durationMs: Date.now() - started,
+          timedOut,
+        });
+      });
     });
   }
 
-  /**
-   * Approve a pending command
-   * @param commandId ID of the command to approve
-   * @returns Promise resolving to command output
-   */
-  public async approveCommand(commandId: string): Promise<CommandResult> {
-    const pendingCommand = this.pendingCommands.get(commandId);
-    if (!pendingCommand) {
-      throw new Error(`No pending command with ID: ${commandId}`);
+  /** Stages are wired in process. Every stage is authorized completely. */
+  async pipeline(
+    stages: { command: string; args?: string[] }[],
+    opts: ExecuteOptions = {},
+  ): Promise<CommandResult> {
+    const cwd = this.resolveCwd(opts.cwd);
+    // Authorize every stage BEFORE executing any, so no stage runs on refusal.
+    for (const s of stages) {
+      this.authorize('execute_pipeline', s.command, s.args ?? [], cwd);
     }
-
-    try {
-      const { stdout, stderr } = await execFileAsync(pendingCommand.command, pendingCommand.args, {
-        shell: this.shell,
+    let carry = opts.stdin;
+    let last: CommandResult | null = null;
+    for (const s of stages) {
+      last = await this.execute('execute_pipeline', s.command, s.args ?? [], {
+        ...opts,
+        cwd,
+        stdin: carry,
       });
-
-      // Remove from pending queue
-      this.pendingCommands.delete(commandId);
-
-      // Emit event for approved command
-      this.emit('command:approved', { commandId, stdout, stderr });
-
-      // Resolve the original promise
-      pendingCommand.resolve({ stdout, stderr });
-
-      return { stdout, stderr };
-    } catch (error) {
-      // Remove from pending queue
-      this.pendingCommands.delete(commandId);
-
-      // Emit event for failed command
-      this.emit('command:failed', { commandId, error });
-
-      if (error instanceof Error) {
-        // Reject the original promise
-        pendingCommand.reject(error);
-        throw error;
-      }
-
-      const genericError = new Error('Command execution failed');
-      pendingCommand.reject(genericError);
-      throw genericError;
+      if (last.truncated) break; // bound memory across the pipeline, not only at its end
+      carry = last.stdout;
     }
+    if (!last) throw new DeniedError('A pipeline requires at least one stage.');
+    return last;
   }
 
-  /**
-   * Deny a pending command
-   * @param commandId ID of the command to deny
-   * @param reason Reason for denial
-   */
-  public denyCommand(commandId: string, reason: string = 'Command denied'): void {
-    const pendingCommand = this.pendingCommands.get(commandId);
-    if (!pendingCommand) {
-      throw new Error(`No pending command with ID: ${commandId}`);
-    }
+  /** Program directories are reported unsafe rather than silently trusted. */
+  unsafeProgramDirs(): string[] {
+    return this.policy.programDirectories.filter((d) => !programDirIsSafe(d).safe);
+  }
 
-    // Remove from pending queue
-    this.pendingCommands.delete(commandId);
+  resolveCwdForTest(given?: string): string {
+    return this.resolveCwd(given);
+  }
 
-    // Emit event for denied command
-    this.emit('command:denied', { commandId, reason });
-
-    // Reject the original promise
-    pendingCommand.reject(new Error(reason));
+  nearestExistingForTest(p: string): string {
+    return nearestExisting(p);
   }
 }

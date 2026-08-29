@@ -10,8 +10,19 @@
     "declaration": true,
     "sourceMap": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "types": [
+      "node"
+    ],
+    "lib": [
+      "ES2022"
+    ]
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "build"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "build"
+  ]
 }

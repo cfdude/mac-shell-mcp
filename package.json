@@ -1,7 +1,7 @@
 {
   "name": "mac-shell-mcp",
-  "version": "1.1.0",
-  "description": "MCP server for executing macOS terminal commands with ZSH",
+  "version": "2.0.0",
+  "description": "MCP server for macOS shell access, confined to configured roots with no shell interpretation",
   "type": "module",
   "main": "build/index.js",
   "bin": {
@@ -44,23 +44,23 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.6.1",
-    "zod": "^3.22.4"
+    "@modelcontextprotocol/sdk": "1.30",
+    "zod": "^4.5.2"
   },
   "overrides": {
     "hono": "^4.12.2"
   },
   "devDependencies": {
     "@types/jest": "^29.5.11",
-    "@types/node": "^20.11.0",
-    "@typescript-eslint/eslint-plugin": "^8.38.0",
-    "@typescript-eslint/parser": "^8.38.0",
-    "eslint": "^9.32.0",
+    "@types/node": "^26.4.0",
+    "@typescript-eslint/eslint-plugin": "^8.68.0",
+    "@typescript-eslint/parser": "^8.68.0",
+    "eslint": "^10.9.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.3",
-    "jest": "^29.7.0",
+    "jest": "^30.5.0",
     "prettier": "^3.6.2",
     "ts-node": "^10.9.2",
-    "typescript": "^5.3.3"
+    "typescript": "^6.0.3"
   }
 }

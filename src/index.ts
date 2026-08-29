@@ -8,522 +8,264 @@ import {
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { CommandService, CommandSecurityLevel } from './services/command-service.js';
+import { suggest } from './audit-log.js';
+import { AuditLog } from './audit-log.js';
+import { PolicyError, loadPolicy, type Policy } from './policy.js';
+import { CommandService, DeniedError } from './services/command-service.js';
 
-/**
- * MacShellMcpServer - MCP server for executing macOS terminal commands with ZSH
- */
+const VERSION = '2.0.0';
+
+const ExecuteSchema = z.object({
+  command: z.string(),
+  args: z.array(z.string()).optional(),
+  cwd: z.string().optional(),
+  stdin: z.string().optional(),
+  timeoutMs: z.number().int().positive().optional(),
+});
+
+const PipelineSchema = z.object({
+  stages: z.array(z.object({ command: z.string(), args: z.array(z.string()).optional() })).min(1),
+  cwd: z.string().optional(),
+  stdin: z.string().optional(),
+});
+
+/** get_policy is exempt from enabledTools: a client unable to discover the policy cannot use the server. */
+const ALWAYS_ENABLED = new Set(['get_policy']);
+
 class MacShellMcpServer {
-  private server: Server;
-  private commandService: CommandService;
-  private pendingApprovals: Map<string, { command: string; args: string[] }>;
+  private readonly server: Server;
+  private readonly service: CommandService;
+  private readonly policy: Policy;
+  private readonly audit: AuditLog;
 
-  constructor() {
-    // Initialize the command service with ZSH shell
-    this.commandService = new CommandService('/bin/zsh');
-    this.pendingApprovals = new Map();
+  constructor(policy: Policy, warnings: string[]) {
+    this.policy = policy;
+    this.audit = new AuditLog(policy.auditLogDir, policy.maxAuditBytes, policy.maxAuditFiles);
+    this.service = new CommandService(policy, this.audit);
 
-    // Initialize the MCP server
-    this.server = new Server(
-      {
-        name: 'mac-shell-mcp',
-        version: '1.0.0',
-      },
-      {
-        capabilities: {
-          tools: {},
-        },
-      },
+    for (const w of warnings) console.error(`[policy] ${w}`);
+    console.error(
+      `[policy] source: ${policy.source}; roots: ${policy.roots.join(', ') || '(none)'}`,
     );
+    for (const d of this.service.unsafeProgramDirs()) {
+      console.error(
+        `[policy] program directory ${d} has an unprivileged write path and will not be used.`,
+      );
+    }
 
-    // Set up event handlers for command service
-    this.setupCommandServiceEvents();
-
-    // Set up MCP request handlers
-    this.setupRequestHandlers();
-
-    // Error handling
-    this.server.onerror = (error) => console.error('[MCP Error]', error);
+    this.server = new Server(
+      { name: 'mac-shell-mcp', version: VERSION },
+      { capabilities: { tools: {} } },
+    );
+    this.setup();
+    this.server.onerror = (e) => console.error('[MCP Error]', e);
     process.on('SIGINT', async () => {
       await this.server.close();
       process.exit(0);
     });
   }
 
-  /**
-   * Set up event handlers for the command service
-   */
-  private setupCommandServiceEvents(): void {
-    this.commandService.on('command:pending', (pendingCommand) => {
-      console.error(
-        `[Pending Command] ID: ${pendingCommand.id}, Command: ${pendingCommand.command} ${pendingCommand.args.join(' ')}`,
-      );
-      this.pendingApprovals.set(pendingCommand.id, {
-        command: pendingCommand.command,
-        args: pendingCommand.args,
-      });
-    });
-
-    this.commandService.on('command:approved', (data) => {
-      console.error(`[Approved Command] ID: ${data.commandId}`);
-      this.pendingApprovals.delete(data.commandId);
-    });
-
-    this.commandService.on('command:denied', (data) => {
-      console.error(`[Denied Command] ID: ${data.commandId}, Reason: ${data.reason}`);
-      this.pendingApprovals.delete(data.commandId);
-    });
-
-    this.commandService.on('command:failed', (data) => {
-      console.error(`[Failed Command] ID: ${data.commandId}, Error: ${data.error.message}`);
-      this.pendingApprovals.delete(data.commandId);
-    });
+  private enabled(name: string): boolean {
+    if (ALWAYS_ENABLED.has(name)) return true;
+    return this.policy.enabledTools ? this.policy.enabledTools.includes(name) : true;
   }
 
-  /**
-   * Set up MCP request handlers
-   */
-  private setupRequestHandlers(): void {
-    // List available tools
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: [
-        {
-          name: 'execute_command',
-          description: 'Execute a shell command on macOS',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              command: {
-                type: 'string',
-                description: 'The command to execute',
-              },
-              args: {
-                type: 'array',
-                items: {
-                  type: 'string',
+  private tools() {
+    const execProps = {
+      command: { type: 'string', description: 'Permitted command name. See get_policy.' },
+      args: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Arguments, each matching a permitted shape.',
+      },
+      cwd: {
+        type: 'string',
+        description: 'Working directory. Defaults to the first configured root.',
+      },
+      stdin: { type: 'string', description: 'Text supplied to standard input.' },
+    };
+    const all = [
+      {
+        name: 'execute_command',
+        description:
+          'Run a permitted command confined to the configured roots. Reads and writes inside a root; refuses anything reaching outside.',
+        inputSchema: { type: 'object', properties: execProps, required: ['command'] },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
+      },
+      {
+        name: 'execute_external_command',
+        description:
+          'Run a permitted command against paths OUTSIDE the configured roots. Requires interactive approval; refused where the client cannot ask a human.',
+        inputSchema: { type: 'object', properties: execProps, required: ['command'] },
+        annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: true },
+      },
+      {
+        name: 'execute_pipeline',
+        description:
+          'Compose read-only commands, wiring stdout to stdin in process. Every stage is authorized independently and confined to the roots.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            stages: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  command: { type: 'string' },
+                  args: { type: 'array', items: { type: 'string' } },
                 },
-                description: 'Command arguments',
+                required: ['command'],
               },
             },
-            required: ['command'],
+            cwd: { type: 'string' },
+            stdin: { type: 'string' },
           },
+          required: ['stages'],
         },
-        {
-          name: 'get_whitelist',
-          description: 'Get the list of whitelisted commands',
-          inputSchema: {
-            type: 'object',
-            properties: {},
-          },
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
         },
-        {
-          name: 'add_to_whitelist',
-          description: 'Add a command to the whitelist',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              command: {
-                type: 'string',
-                description: 'The command to whitelist',
-              },
-              securityLevel: {
-                type: 'string',
-                enum: ['safe', 'requires_approval', 'forbidden'],
-                description: 'Security level for the command',
-              },
-              description: {
-                type: 'string',
-                description: 'Description of the command',
-              },
-            },
-            required: ['command', 'securityLevel'],
-          },
+      },
+      {
+        name: 'get_policy',
+        description:
+          'Report the effective policy: permitted commands with effects, permissions and argument shapes, plus the configured roots.',
+        inputSchema: { type: 'object', properties: {} },
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
         },
-        {
-          name: 'update_security_level',
-          description: 'Update the security level of a whitelisted command',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              command: {
-                type: 'string',
-                description: 'The command to update',
-              },
-              securityLevel: {
-                type: 'string',
-                enum: ['safe', 'requires_approval', 'forbidden'],
-                description: 'New security level for the command',
-              },
-            },
-            required: ['command', 'securityLevel'],
-          },
+      },
+      {
+        name: 'suggest_policy_config',
+        description:
+          'Summarize recorded usage into configuration a human may apply. Cannot apply it; the policy file is protected.',
+        inputSchema: { type: 'object', properties: {} },
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
         },
-        {
-          name: 'remove_from_whitelist',
-          description: 'Remove a command from the whitelist',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              command: {
-                type: 'string',
-                description: 'The command to remove from whitelist',
-              },
-            },
-            required: ['command'],
-          },
-        },
-        {
-          name: 'get_pending_commands',
-          description: 'Get the list of commands pending approval',
-          inputSchema: {
-            type: 'object',
-            properties: {},
-          },
-        },
-        {
-          name: 'approve_command',
-          description: 'Approve a pending command',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              commandId: {
-                type: 'string',
-                description: 'ID of the command to approve',
-              },
-            },
-            required: ['commandId'],
-          },
-        },
-        {
-          name: 'deny_command',
-          description: 'Deny a pending command',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              commandId: {
-                type: 'string',
-                description: 'ID of the command to deny',
-              },
-              reason: {
-                type: 'string',
-                description: 'Reason for denial',
-              },
-            },
-            required: ['commandId'],
-          },
-        },
-      ],
-    }));
+      },
+    ];
+    return all.filter((t) => this.enabled(t.name));
+  }
 
-    // Handle tool calls
+  private setup(): void {
+    this.server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: this.tools() }));
+
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const { name, arguments: args } = request.params;
+      const { name, arguments: rawArgs } = request.params;
+      if (!this.enabled(name))
+        throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
 
       try {
         switch (name) {
           case 'execute_command':
-            return await this.handleExecuteCommand(args);
-          case 'get_whitelist':
-            return await this.handleGetWhitelist();
-          case 'add_to_whitelist':
-            return await this.handleAddToWhitelist(args);
-          case 'update_security_level':
-            return await this.handleUpdateSecurityLevel(args);
-          case 'remove_from_whitelist':
-            return await this.handleRemoveFromWhitelist(args);
-          case 'get_pending_commands':
-            return await this.handleGetPendingCommands();
-          case 'approve_command':
-            return await this.handleApproveCommand(args);
-          case 'deny_command':
-            return await this.handleDenyCommand(args);
+          case 'execute_external_command': {
+            const a = ExecuteSchema.parse(rawArgs);
+            const r = await this.service.execute(name, a.command, a.args ?? [], {
+              cwd: a.cwd,
+              stdin: a.stdin,
+              timeoutMs: a.timeoutMs,
+            });
+            return this.result(r);
+          }
+          case 'execute_pipeline': {
+            const a = PipelineSchema.parse(rawArgs);
+            const r = await this.service.pipeline(a.stages, { cwd: a.cwd, stdin: a.stdin });
+            return this.result(r);
+          }
+          case 'get_policy':
+            return this.json(this.service.getPolicy());
+          case 'suggest_policy_config':
+            return this.json(suggest(this.audit.read(), Object.keys(this.policy.commands)));
           default:
             throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
         }
-      } catch (error) {
-        if (error instanceof McpError) {
-          throw error;
-        }
-
-        if (error instanceof Error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `Error: ${error.message}`,
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        throw new McpError(ErrorCode.InternalError, 'An unexpected error occurred');
+      } catch (e) {
+        if (e instanceof McpError) throw e;
+        // A refusal is a result the agent must act on, not a protocol error.
+        const message = e instanceof Error ? e.message : String(e);
+        return { content: [{ type: 'text', text: message }], isError: true };
       }
     });
   }
 
-  /**
-   * Handle execute_command tool
-   */
-  private async handleExecuteCommand(args: unknown) {
-    const schema = z.object({
-      command: z.string(),
-      args: z.array(z.string()).optional(),
-    });
-
-    const { command, args: commandArgs = [] } = schema.parse(args);
-
-    try {
-      const result = await this.commandService.executeCommand(command, commandArgs);
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: result.stdout,
-          },
-          {
-            type: 'text',
-            text: result.stderr ? `Error output: ${result.stderr}` : '',
-          },
-        ],
-      };
-    } catch (error) {
-      if (error instanceof Error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Command execution failed: ${error.message}`,
-            },
-          ],
-          isError: true,
-        };
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * Handle get_whitelist tool
-   */
-  private async handleGetWhitelist() {
-    const whitelist = this.commandService.getWhitelist();
-
+  /** A non-zero exit is a normal result; only a failure to start is an error. */
+  private result(r: {
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+    truncated: boolean;
+    omittedBytes: number;
+    durationMs: number;
+    timedOut: boolean;
+  }) {
+    const summary =
+      (r.truncated ? `[output truncated; ${r.omittedBytes} bytes omitted]\n` : '') +
+      (r.timedOut ? '[command timed out]\n' : '') +
+      r.stdout +
+      (r.stderr ? `\n[stderr]\n${r.stderr}` : '');
     return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(whitelist, null, 2),
-        },
-      ],
+      content: [{ type: 'text', text: summary }],
+      structuredContent: {
+        stdout: r.stdout,
+        stderr: r.stderr,
+        exitCode: r.exitCode,
+        truncated: r.truncated,
+        omittedBytes: r.omittedBytes,
+        durationMs: r.durationMs,
+        timedOut: r.timedOut,
+      },
     };
   }
 
-  /**
-   * Handle add_to_whitelist tool
-   */
-  private async handleAddToWhitelist(args: unknown) {
-    const schema = z.object({
-      command: z.string(),
-      securityLevel: z.enum(['safe', 'requires_approval', 'forbidden']),
-      description: z.string().optional(),
-    });
-
-    const { command, securityLevel, description } = schema.parse(args);
-
-    // Map string security level to enum
-    const securityLevelEnum =
-      securityLevel === 'safe'
-        ? CommandSecurityLevel.SAFE
-        : securityLevel === 'requires_approval'
-          ? CommandSecurityLevel.REQUIRES_APPROVAL
-          : CommandSecurityLevel.FORBIDDEN;
-
-    this.commandService.addToWhitelist({
-      command,
-      securityLevel: securityLevelEnum,
-      description,
-    });
-
+  private json(value: unknown) {
     return {
-      content: [
-        {
-          type: 'text',
-          text: `Command '${command}' added to whitelist with security level '${securityLevel}'`,
-        },
-      ],
+      content: [{ type: 'text', text: JSON.stringify(value, null, 2) }],
+      structuredContent: value as Record<string, unknown>,
     };
   }
 
-  /**
-   * Handle update_security_level tool
-   */
-  private async handleUpdateSecurityLevel(args: unknown) {
-    const schema = z.object({
-      command: z.string(),
-      securityLevel: z.enum(['safe', 'requires_approval', 'forbidden']),
-    });
-
-    const { command, securityLevel } = schema.parse(args);
-
-    // Map string security level to enum
-    const securityLevelEnum =
-      securityLevel === 'safe'
-        ? CommandSecurityLevel.SAFE
-        : securityLevel === 'requires_approval'
-          ? CommandSecurityLevel.REQUIRES_APPROVAL
-          : CommandSecurityLevel.FORBIDDEN;
-
-    this.commandService.updateSecurityLevel(command, securityLevelEnum);
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Security level for command '${command}' updated to '${securityLevel}'`,
-        },
-      ],
-    };
-  }
-
-  /**
-   * Handle remove_from_whitelist tool
-   */
-  private async handleRemoveFromWhitelist(args: unknown) {
-    const schema = z.object({
-      command: z.string(),
-    });
-
-    const { command } = schema.parse(args);
-
-    this.commandService.removeFromWhitelist(command);
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Command '${command}' removed from whitelist`,
-        },
-      ],
-    };
-  }
-
-  /**
-   * Handle get_pending_commands tool
-   */
-  private async handleGetPendingCommands() {
-    const pendingCommands = this.commandService.getPendingCommands();
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(
-            pendingCommands.map((cmd) => ({
-              id: cmd.id,
-              command: cmd.command,
-              args: cmd.args,
-              requestedAt: cmd.requestedAt,
-              requestedBy: cmd.requestedBy,
-            })),
-            null,
-            2,
-          ),
-        },
-      ],
-    };
-  }
-
-  /**
-   * Handle approve_command tool
-   */
-  private async handleApproveCommand(args: unknown) {
-    const schema = z.object({
-      commandId: z.string(),
-    });
-
-    const { commandId } = schema.parse(args);
-
-    try {
-      const result = await this.commandService.approveCommand(commandId);
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Command approved and executed successfully.\nOutput: ${result.stdout}`,
-          },
-          {
-            type: 'text',
-            text: result.stderr ? `Error output: ${result.stderr}` : '',
-          },
-        ],
-      };
-    } catch (error) {
-      if (error instanceof Error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Command approval failed: ${error.message}`,
-            },
-          ],
-          isError: true,
-        };
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * Handle deny_command tool
-   */
-  private async handleDenyCommand(args: unknown) {
-    const schema = z.object({
-      commandId: z.string(),
-      reason: z.string().optional(),
-    });
-
-    const { commandId, reason } = schema.parse(args);
-
-    try {
-      this.commandService.denyCommand(commandId, reason);
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Command denied${reason ? `: ${reason}` : ''}`,
-          },
-        ],
-      };
-    } catch (error) {
-      if (error instanceof Error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Command denial failed: ${error.message}`,
-            },
-          ],
-          isError: true,
-        };
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * Run the MCP server
-   */
-  async run() {
+  async run(): Promise<void> {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error('Mac Shell MCP server running on stdio');
+    console.error(`mac-shell-mcp ${VERSION} running on stdio`);
   }
 }
 
-// Create and run the server
-const server = new MacShellMcpServer();
-server.run().catch(console.error);
+async function main(): Promise<void> {
+  try {
+    // Interactivity is asserted only by the MCP `elicitation` capability, which
+    // is the sole capability meaning a human can be asked. `sampling` means a
+    // model would answer, which is not a human gate.
+    const { policy, warnings } = loadPolicy({ interactive: false });
+    const server = new MacShellMcpServer(policy, warnings);
+    await server.run();
+  } catch (e) {
+    if (e instanceof PolicyError) {
+      console.error(`[policy] ${e.message}`);
+      process.exit(1);
+    }
+    throw e;
+  }
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
+
+export { MacShellMcpServer, CommandService, DeniedError };
