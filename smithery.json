@@ -1,151 +1,119 @@
 {
   "name": "mac-shell-mcp",
-  "description": "An MCP server for executing macOS terminal commands with ZSH shell, featuring secure command whitelisting and approval mechanisms",
+  "description": "MCP server for macOS shell access, confined to configured roots with no shell interpretation",
   "author": "Rob Sherman",
   "license": "MIT",
   "repository": "https://github.com/cfdude/mac-shell-mcp",
   "homepage": "https://github.com/cfdude/mac-shell-mcp#readme",
-  "version": "1.0.4",
+  "version": "2.0.0",
   "categories": ["productivity", "automation", "terminal", "macos"],
-  "keywords": ["mcp", "shell", "macos", "zsh", "terminal", "command-line", "automation"],
+  "keywords": ["mcp", "shell", "macos", "terminal", "security"],
   "requirements": {
     "node": ">=18.0.0",
     "platform": ["darwin"]
   },
   "installation": {
     "type": "npm",
-    "package": "mac-shell-mcp"
+    "package": "@cfdude/mac-shell-mcp"
   },
   "configuration": {
     "claude": {
       "command": "npx",
-      "args": ["-y", "mac-shell-mcp"],
+      "args": ["-y", "@cfdude/mac-shell-mcp"],
       "alwaysAllow": false
     },
     "roo": {
       "command": "npx",
-      "args": ["-y", "mac-shell-mcp"],
+      "args": ["-y", "@cfdude/mac-shell-mcp"],
       "alwaysAllow": []
     }
   },
   "tools": [
     {
       "name": "execute_command",
-      "description": "Execute a shell command on macOS",
+      "description": "Run a permitted command confined to the configured roots",
       "parameters": {
         "command": {
           "type": "string",
-          "description": "The command to execute",
           "required": true
         },
         "args": {
           "type": "array",
-          "description": "Command arguments",
+          "required": false
+        },
+        "cwd": {
+          "type": "string",
+          "required": false
+        },
+        "stdin": {
+          "type": "string",
           "required": false
         }
       }
     },
     {
-      "name": "get_whitelist",
-      "description": "Get the list of whitelisted commands",
+      "name": "execute_external_command",
+      "description": "Run a permitted command outside the roots; requires an interactive client",
+      "parameters": {
+        "command": {
+          "type": "string",
+          "required": true
+        },
+        "args": {
+          "type": "array",
+          "required": false
+        },
+        "cwd": {
+          "type": "string",
+          "required": false
+        }
+      }
+    },
+    {
+      "name": "execute_pipeline",
+      "description": "Compose read-only commands, wiring stdout to stdin in process",
+      "parameters": {
+        "stages": {
+          "type": "array",
+          "required": true
+        },
+        "cwd": {
+          "type": "string",
+          "required": false
+        }
+      }
+    },
+    {
+      "name": "get_policy",
+      "description": "Report the effective policy",
       "parameters": {}
     },
     {
-      "name": "add_to_whitelist",
-      "description": "Add a command to the whitelist",
-      "parameters": {
-        "command": {
-          "type": "string",
-          "description": "The command to whitelist",
-          "required": true
-        },
-        "securityLevel": {
-          "type": "string",
-          "description": "Security level: safe, requires_approval, or forbidden",
-          "required": true
-        },
-        "description": {
-          "type": "string",
-          "description": "Description of the command",
-          "required": false
-        }
-      }
-    },
-    {
-      "name": "update_security_level",
-      "description": "Update the security level of a whitelisted command",
-      "parameters": {
-        "command": {
-          "type": "string",
-          "description": "The command to update",
-          "required": true
-        },
-        "securityLevel": {
-          "type": "string",
-          "description": "New security level",
-          "required": true
-        }
-      }
-    },
-    {
-      "name": "remove_from_whitelist",
-      "description": "Remove a command from the whitelist",
-      "parameters": {
-        "command": {
-          "type": "string",
-          "description": "The command to remove",
-          "required": true
-        }
-      }
-    },
-    {
-      "name": "get_pending_commands",
-      "description": "Get the list of commands pending approval",
+      "name": "suggest_policy_config",
+      "description": "Summarize recorded usage into configuration a human may apply",
       "parameters": {}
-    },
-    {
-      "name": "approve_command",
-      "description": "Approve a pending command",
-      "parameters": {
-        "commandId": {
-          "type": "string",
-          "description": "The ID of the command to approve",
-          "required": true
-        }
-      }
-    },
-    {
-      "name": "deny_command",
-      "description": "Deny a pending command",
-      "parameters": {
-        "commandId": {
-          "type": "string",
-          "description": "The ID of the command to deny",
-          "required": true
-        },
-        "reason": {
-          "type": "string",
-          "description": "Reason for denial",
-          "required": false
-        }
-      }
     }
   ],
   "environment": {
-    "MAC_SHELL_SAFE_MODE": {
-      "type": "boolean",
-      "description": "Enable safe mode (restrict to safe commands only)",
-      "default": false
-    },
-    "MAC_SHELL_LOG_LEVEL": {
+    "MAC_SHELL_MCP_CONFIG": {
       "type": "string",
-      "description": "Logging level (debug, info, warn, error)",
-      "default": "info"
+      "description": "Explicit path to a policy file. Takes precedence over the home config."
     },
-    "MAC_SHELL_APPROVAL_TIMEOUT": {
-      "type": "number",
-      "description": "Timeout for command approval in seconds",
-      "default": 300
+    "MAC_SHELL_ROOTS": {
+      "type": "string",
+      "description": "Comma-separated directories the agent may work in."
+    },
+    "MAC_SHELL_COMMANDS": {
+      "type": "string",
+      "description": "Comma-separated permitted commands."
+    },
+    "MAC_SHELL_AUDIT_DIR": {
+      "type": "string",
+      "description": "Directory for the audit log."
     }
+  },
+  "security": {
+    "notes": "No shell is invoked. The child environment is constructed rather than inherited. No tool mutates policy at runtime. find, git, rm and interpreters are absent by default.",
+    "advisories": "https://github.com/cfdude/mac-shell-mcp/security/advisories"
   }
 }

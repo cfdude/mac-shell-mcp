@@ -1,363 +1,136 @@
-[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/cfdude-mac-shell-mcp-badge.png)](https://mseep.ai/app/cfdude-mac-shell-mcp)
-
 # Mac Shell MCP Server
 
-An MCP (Model Context Protocol) server for executing macOS terminal commands with ZSH shell. This server provides a secure way to execute shell commands with built-in whitelisting and approval mechanisms.
+[![CI](https://github.com/cfdude/mac-shell-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/cfdude/mac-shell-mcp/actions/workflows/ci.yml)
+[![Security Scans](https://github.com/cfdude/mac-shell-mcp/actions/workflows/security.yml/badge.svg)](https://github.com/cfdude/mac-shell-mcp/actions/workflows/security.yml)
 
-<a href="https://glama.ai/mcp/servers/@cfdude/mac-shell-mcp">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/@cfdude/mac-shell-mcp/badge" alt="Mac Shell Server MCP server" />
-</a>
+An MCP server that lets an AI client run a **small, fixed set of read-only shell commands**, confined to directories you nominate.
 
-## Features
+It is built around one idea: **the agent cannot widen its own authority.** There is no tool that edits the policy, no approval queue the agent can drain, and no shell to interpret its arguments.
 
-- Execute macOS terminal commands through MCP
-- Command whitelisting with security levels:
-  - **Safe**: Commands that can be executed without approval
-  - **Requires Approval**: Commands that need explicit approval before execution
-  - **Forbidden**: Commands that are explicitly blocked
-- Pre-configured whitelist with common safe commands
-- Approval workflow for potentially dangerous commands
-- Comprehensive command management tools
+> **Upgrading from 1.x?** 2.0.0 is a breaking change. Seven tools were removed and the authorization model was replaced. See [Migrating from 1.x](#migrating-from-1x). 1.x contained two vulnerabilities reported by four independent researchers; see the [security advisories](https://github.com/cfdude/mac-shell-mcp/security/advisories).
 
-## Installation
+## What it does
 
-```bash
-# Clone the repository
-git clone https://github.com/cfdude/mac-shell-mcp.git
-cd mac-shell-mcp
+| Tool                       | What it is for                                                    |
+| -------------------------- | ----------------------------------------------------------------- |
+| `execute_command`          | Run a permitted command **inside** your configured directories    |
+| `execute_external_command` | Run one **outside** them — requires a client that can ask a human |
+| `execute_pipeline`         | Chain read-only commands, stdout to stdin, without a shell        |
+| `get_policy`               | Ask what is permitted, rather than guessing and being refused     |
+| `suggest_policy_config`    | Turn observed usage into config **you** apply                     |
 
-# Install dependencies
-npm install
+## Default commands
 
-# Build the project
-npm run build
-```
+`ls` `pwd` `echo` `cat` `head` `tail` `wc` `grep`
 
-## Usage
+Each is restricted to an allowlist of flags. None of them can write a file, execute another program, or read configuration from the environment.
 
-### Starting the Server
+**`find`, `git`, `rm` and every interpreter are absent by default.** You can add any of them, and should know why they are not there:
+
+- `find -fprintf` writes attacker-chosen content to an attacker-chosen path, while `find` is naturally classified read-only
+- `git` executes commands from a repository's own `.git/config`, and no environment variable disables that
+- interpreters (`python`, `perl`, `awk`, `node`, `osascript`, …) take inline code as an argument
+
+## Install
 
 ```bash
-npm start
+npm install -g @cfdude/mac-shell-mcp
 ```
 
-Or directly:
+Then create a policy:
 
 ```bash
-node build/index.js
+mkdir -p ~/.mac-shell-mcp
+cp .mac-shell-mcp.sample.json ~/.mac-shell-mcp/config.json
+$EDITOR ~/.mac-shell-mcp/config.json    # set allowedRoots to your project
+chmod 444 ~/.mac-shell-mcp/config.json  # defence in depth; see Security
 ```
 
-### Configuring in Roo Code and Claude Desktop
-
-Both Roo Code and Claude Desktop use a similar configuration format for MCP servers. Here's how to set up the Mac Shell MCP server:
-
-#### Using Local Installation
-
-##### Roo Code Configuration
-
-Add the following to your Roo Code MCP settings configuration file (located at `~/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json`):
-
-```json
-"mac-shell": {
-  "command": "node",
-  "args": [
-    "/path/to/mac-shell-mcp/build/index.js"
-  ],
-  "alwaysAllow": [],
-  "disabled": false
-}
-```
-
-##### Claude Desktop Configuration
-
-Add the following to your Claude Desktop configuration file (located at `~/Library/Application Support/Claude/claude_desktop_config.json`):
-
-```json
-"mac-shell": {
-  "command": "node",
-  "args": [
-    "/path/to/mac-shell-mcp/build/index.js"
-  ],
-  "alwaysAllow": false,
-  "disabled": false
-}
-```
-
-Replace `/path/to/mac-shell-mcp` with the actual path where you cloned the repository.
-
-#### Using NPX (Recommended)
-
-For a more convenient setup that doesn't require keeping a terminal window open, you can publish the package to npm and use it with npx:
-
-##### Publishing to npm
-
-1. Update the package.json with your details
-2. Publish to npm:
-   ```bash
-   npm publish
-   ```
-
-##### Roo Code Configuration
-
-```json
-"mac-shell": {
-  "command": "npx",
-  "args": [
-    "-y",
-    "mac-shell-mcp"
-  ],
-  "alwaysAllow": [],
-  "disabled": false
-}
-```
-
-##### Claude Desktop Configuration
-
-```json
-"mac-shell": {
-  "command": "npx",
-  "args": [
-    "-y",
-    "mac-shell-mcp"
-  ],
-  "alwaysAllow": false,
-  "disabled": false
-}
-```
-
-This approach allows the MCP server to be started automatically by the MCP client without requiring a separate terminal window or manual intervention.
-
-> **Note**:
-> - For Roo Code: Setting `alwaysAllow` to an empty array `[]` is recommended for security reasons, as it will prompt for approval before executing any commands. If you want to allow specific commands without prompting, you can add their names to the array, for example: `"alwaysAllow": ["execute_command", "get_whitelist"]`.
-> - For Claude Desktop: Setting `alwaysAllow` to `false` is recommended for security reasons. Claude Desktop uses a boolean value instead of an array, where `false` means all commands require approval and `true` means all commands are allowed without prompting.
->
-> **Important**: The `alwaysAllow` parameter is processed by the MCP client (Roo Code or Claude Desktop), not by the Mac Shell MCP server itself. The server will work correctly with either format, as the client handles the approval process before sending requests to the server.
-
-### Available Tools
-
-The server exposes the following MCP tools:
-
-#### `execute_command`
-
-Execute a shell command on macOS.
+Add to your MCP client:
 
 ```json
 {
-  "command": "ls",
-  "args": ["-la"]
+  "mcpServers": {
+    "mac-shell": { "command": "npx", "args": ["-y", "@cfdude/mac-shell-mcp"] }
+  }
 }
 ```
 
-#### `get_whitelist`
+**A fresh install with no roots configured refuses everything** — deliberately. Each refusal names the permitted commands and where configuration lives, so the first failure tells you what to do.
 
-Get the list of whitelisted commands.
+## Configuration
 
-```json
-{}
-```
+Policy is found in this order, first match wins, never merged:
 
-#### `add_to_whitelist`
+1. `$MAC_SHELL_MCP_CONFIG` — an explicit path
+2. `~/.mac-shell-mcp/config.json`
+3. Host environment (`MAC_SHELL_ROOTS`, `MAC_SHELL_COMMANDS`)
+4. Built-in defaults
 
-Add a command to the whitelist.
+**Policy is never read from the working directory.** A cloned repository must not be able to supply the policy governing the agent that opens it.
 
-```json
+```jsonc
 {
-  "command": "python3",
-  "securityLevel": "safe",
-  "description": "Run Python 3 scripts"
+  "allowedRoots": ["/Users/you/Projects/my-project"],
+  "programDirectories": ["/usr/bin", "/bin", "/usr/sbin", "/sbin"],
+  "commands": {
+    "grep": {
+      "program": "/usr/bin/grep",
+      "effect": "read",
+      "allowedArgs": ["-i", "-n", "-r", "-l", "-E", "-F"],
+      "permission": "allow",
+    },
+  },
 }
 ```
 
-#### `update_security_level`
+`permission` is `allow`, `ask`, or `deny`. **`ask` requires a client offering MCP `elicitation`** — the only capability that means a human can be asked. Where it is absent, `ask` becomes `deny`, never `allow`.
 
-Update the security level of a whitelisted command.
+## How it decides
 
-```json
-{
-  "command": "python3",
-  "securityLevel": "requires_approval"
-}
+**Authorization is `effect × scope`, computed per call.** `grep` inside your project is free; the same `grep` against `~/.aws` is not. The command name alone never decides.
+
+- **No shell.** `execFile` is never given a `shell` option, so arguments reach the OS uninterpreted. Nothing evaluates `;`, `$()`, or backticks — which is also why filenames with spaces, parentheses and brackets work normally.
+- **The program is authorized, not just the arguments.** Commands resolve to an absolute path from your program directories, are matched by that resolved path rather than by basename, and are refused if they resolve inside one of your roots. Roots hold data, never code.
+- **The environment is constructed, not inherited**, so a variable like `RIPGREP_CONFIG_PATH` cannot smuggle in a helper program that never appears in the argument list.
+- **Allowlists, never denylists.** A denylist is a list of the flags somebody thought of.
+- **Scope includes the working directory**, so a command with no path argument is judged by where it runs rather than passing because it named nothing.
+
+## Security
+
+The policy file, its parent directories, your program directories, and the whole audit log directory are **protected locations** — the server refuses to modify any of them, judged by the operation a request performs rather than by a command's declared effect. This is enforced in code, keyed on filesystem identity rather than path strings, and cannot be switched off from the policy file.
+
+`chmod 444` on your config is worth doing as a second, independent layer. It is not the mechanism: replacing a file needs write permission on its _directory_, not the file.
+
+Every request, permitted or refused, is recorded to an append-only audit log.
+
+**Known limits**, stated rather than implied — see [SECURITY.md](SECURITY.md):
+
+- Path detection is heuristic, and fails closed
+- Everything inside a root is freely readable by one recursive search
+- `ask` is only as strong as the host's approval prompt
+- Flag meanings vary between implementations of the same command name
+
+Report vulnerabilities via [private advisory](https://github.com/cfdude/mac-shell-mcp/security/advisories/new) or `security@onvex.ai`.
+
+## Migrating from 1.x
+
+**Removed:** `add_to_whitelist`, `update_security_level`, `remove_from_whitelist`, `approve_command`, `deny_command`, `get_pending_commands`, `get_whitelist`.
+
+The first three let any client promote a forbidden command to `safe`. The next three formed an approval workflow the requesting agent could drain by itself. `get_whitelist` is replaced by `get_policy`.
+
+Runtime whitelist edits become a config file you edit and the server reads at startup. `rm` was `FORBIDDEN` in 1.x and remains unavailable, so nothing that worked before stops working.
+
+## Development
+
+```bash
+npm install && npm run build
+npm test          # run it twice; a suite that only passes once is not passing
+npm run lint && npm run format:check
 ```
 
-#### `remove_from_whitelist`
-
-Remove a command from the whitelist.
-
-```json
-{
-  "command": "python3"
-}
-```
-
-#### `get_pending_commands`
-
-Get the list of commands pending approval.
-
-```json
-{}
-```
-
-#### `approve_command`
-
-Approve a pending command.
-
-```json
-{
-  "commandId": "command-uuid-here"
-}
-```
-
-#### `deny_command`
-
-Deny a pending command.
-
-```json
-{
-  "commandId": "command-uuid-here",
-  "reason": "This command is potentially dangerous"
-}
-```
-
-## Default Whitelisted Commands
-
-### Safe Commands (No Approval Required)
-
-- `ls` - List directory contents
-- `pwd` - Print working directory
-- `echo` - Print text to standard output
-- `cat` - Concatenate and print files
-- `grep` - Search for patterns in files
-- `find` - Find files in a directory hierarchy
-- `cd` - Change directory
-- `head` - Output the first part of files
-- `tail` - Output the last part of files
-- `wc` - Print newline, word, and byte counts
-
-### Commands Requiring Approval
-
-- `mv` - Move (rename) files
-- `cp` - Copy files and directories
-- `mkdir` - Create directories
-- `touch` - Change file timestamps or create empty files
-- `chmod` - Change file mode bits
-- `chown` - Change file owner and group
-
-### Forbidden Commands
-
-- `rm` - Remove files or directories
-- `sudo` - Execute a command as another user
-
-## Security Considerations
-
-> **⚠️ Accuracy note (2026-08-28).** This section previously claimed that forbidden commands
-> are never executed and that the server "uses Node.js's `execFile` instead of `exec` to prevent
-> shell injection". **Neither claim holds in 1.x.** They have been removed rather than restated,
-> because external reporters reasonably relied on them. Treat 1.x as providing no meaningful
-> sandbox, and see [SECURITY.md](SECURITY.md) plus the repository's
-> [security advisories](https://github.com/cfdude/mac-shell-mcp/security/advisories).
-
-- All commands are executed with the permissions of the user running the MCP server
-- Commands requiring approval are held in a queue until approved — **but the approval tools are
-  exposed to the same client that makes the request, so this is not an enforced control in 1.x**
-- The command whitelist is mutable at runtime by any connected client, so the "forbidden" tier
-  is advisory rather than binding in 1.x
-- Arguments are validated against allowed patterns when specified
-
-A redesign that makes these guarantees real ships in 2.0.0 — see
-[the design spec](docs/superpowers/specs/2026-08-13-mac-shell-mcp-2.0-security-redesign.md).
-
-## Extending the Whitelist
-
-You can extend the whitelist by using the `add_to_whitelist` tool. For example:
-
-```json
-{
-  "command": "npm",
-  "securityLevel": "requires_approval",
-  "description": "Node.js package manager"
-}
-```
-
-## Using as an npm Package
-
-To use the Mac Shell MCP server with `npx` similar to other MCP servers like Brave Search, you can publish it to npm or use it directly from GitHub.
-
-### Configuration with npx
-
-Add the following to your MCP settings configuration:
-
-#### Roo Code
-```json
-"mac-shell": {
-  "command": "npx",
-  "args": [
-    "-y",
-    "github:cfdude/mac-shell-mcp"
-  ],
-  "alwaysAllow": [],
-  "disabled": false
-}
-```
-
-#### Claude Desktop
-```json
-"mac-shell": {
-  "command": "npx",
-  "args": [
-    "-y",
-    "github:cfdude/mac-shell-mcp"
-  ],
-  "alwaysAllow": false,
-  "disabled": false
-}
-```
-
-This will automatically download and run the server without requiring a manual clone and build process.
-
-### Publishing to npm
-
-If you want to publish your own version to npm:
-
-1. Update the package.json with your details
-2. Add a "bin" field to package.json:
-   ```json
-   "bin": {
-     "mac-shell-mcp": "./build/index.js"
-   }
-   ```
-3. Publish to npm:
-   ```bash
-   npm publish
-   ```
-
-Then you can use it in your MCP configuration:
-
-#### Roo Code
-```json
-"mac-shell": {
-  "command": "npx",
-  "args": [
-    "-y",
-    "mac-shell-mcp"
-  ],
-  "alwaysAllow": [],
-  "disabled": false
-}
-```
-
-#### Claude Desktop
-```json
-"mac-shell": {
-  "command": "npx",
-  "args": [
-    "-y",
-    "mac-shell-mcp"
-  ],
-  "alwaysAllow": false,
-  "disabled": false
-}
-```
+Design and specifications: `openspec/changes/mac-shell-mcp-2-security-redesign/`.
 
 ## License
 
-This MCP server is licensed under the MIT License. This means you are free to use, modify, and distribute the software, subject to the terms and conditions of the MIT License. For more details, please see the LICENSE file in the project repository.
+MIT — see [LICENSE](LICENSE).

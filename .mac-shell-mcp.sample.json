@@ -1,0 +1,66 @@
+{
+  "_comment": "Copy to ~/.mac-shell-mcp/config.json, edit, then: chmod 444 ~/.mac-shell-mcp/config.json",
+
+  "allowedRoots": ["/Users/you/Projects/my-project"],
+
+  "_roots_note": "A root must be a project directory. The home directory and / are refused: confinement makes everything inside a root freely readable by one recursive search. Everything outside the roots requires execute_external_command, which needs an interactive client.",
+
+  "programDirectories": ["/usr/bin", "/bin", "/usr/sbin", "/sbin"],
+
+  "_programDirectories_note": "Programs resolve only from here, matched by resolved path. A directory with an unprivileged write path is refused: a writable program directory lets any write primitive author a program that resolves as a permitted command.",
+
+  "commands": {
+    "ls": {
+      "program": "/bin/ls",
+      "effect": "read",
+      "allowedArgs": ["-l", "-a", "-h", "-t", "-r", "-1"],
+      "permission": "allow"
+    },
+    "pwd": { "program": "/bin/pwd", "effect": "read", "allowedArgs": [], "permission": "allow" },
+    "echo": {
+      "program": "/bin/echo",
+      "effect": "read",
+      "allowedArgs": ["-n"],
+      "permission": "allow"
+    },
+    "cat": {
+      "program": "/bin/cat",
+      "effect": "read",
+      "allowedArgs": ["-n", "-b", "-s"],
+      "permission": "allow"
+    },
+    "head": {
+      "program": "/usr/bin/head",
+      "effect": "read",
+      "allowedArgs": ["-n", "-c"],
+      "permission": "allow"
+    },
+    "tail": {
+      "program": "/usr/bin/tail",
+      "effect": "read",
+      "allowedArgs": ["-n", "-c"],
+      "permission": "allow"
+    },
+    "wc": {
+      "program": "/usr/bin/wc",
+      "effect": "read",
+      "allowedArgs": ["-l", "-w", "-c", "-m"],
+      "permission": "allow"
+    },
+    "grep": {
+      "program": "/usr/bin/grep",
+      "effect": "read",
+      "allowedArgs": ["-i", "-n", "-v", "-c", "-l", "-w", "-x", "-E", "-F", "-r", "-A", "-B", "-C"],
+      "permission": "allow"
+    }
+  },
+
+  "_commands_note": "Argument allowlists, never denylists. A command declaring no allowedArgs accepts no arguments. grep -R and -S are excluded: both follow symbolic links during traversal on at least one implementation, reaching outside a root. -r does not.",
+
+  "_adding_note": "find, git, rm and every interpreter are ABSENT by default. find -fprintf writes attacker-chosen content while declared read; git executes commands from local .git/config and no environment variable disables it; interpreters take inline code. Add one only if you accept that.",
+
+  "deniedCommands": [],
+  "maxOutputBytes": 1048576,
+  "timeoutMs": 30000,
+  "maxConcurrent": 4
+}

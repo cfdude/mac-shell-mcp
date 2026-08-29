@@ -12,8 +12,7 @@ COPY package*.json ./
 COPY tsconfig.json ./
 
 # Install dependencies
-RUN npm ci --only=production && \
-    npm ci --only=development
+RUN npm ci
 
 # Copy source code
 COPY src/ ./src/
@@ -48,8 +47,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install only production dependencies
-RUN npm ci --only=production && \
-    npm cache clean --force
+RUN npm ci --omit=dev && npm cache clean --force
 
 # Copy built application from builder
 COPY --from=builder /app/build ./build
@@ -67,14 +65,17 @@ USER mcpuser
 # Set environment variables
 ENV NODE_ENV=production
 ENV MCP_SERVER_NAME=mac-shell-mcp
+# A container starts with built-in defaults and NO roots, so it refuses every
+# request until a policy is supplied. Mount one and point at it:
+#   docker run -v $PWD/policy.json:/etc/mac-shell-mcp.json:ro \
+#              -e MAC_SHELL_MCP_CONFIG=/etc/mac-shell-mcp.json mac-shell-mcp
+ENV MAC_SHELL_MCP_CONFIG=/etc/mac-shell-mcp.json
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD node -e "process.exit(0)" || exit 1
 
-# Expose the default MCP stdio interface
-# Note: MCP servers typically communicate via stdio, not network ports
-EXPOSE 3000
+# No port is exposed: this server speaks MCP over stdio.
 
 # Start the MCP server
 CMD ["node", "build/index.js"]
