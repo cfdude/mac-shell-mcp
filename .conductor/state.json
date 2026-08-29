@@ -22,7 +22,9 @@
         }
       ],
       "reconcileNeeded": false,
-      "attributedCommits": [],
+      "attributedCommits": [
+        "f91425b"
+      ],
       "startedAt": "2026-08-28T22:46:06.110Z",
       "gateReview": {
         "gate1": {
@@ -60,7 +62,7 @@
         },
         {
           "title": "Publish 2.0.0 as @cfdude/mac-shell-mcp -- unblocks release regardless of dispute outcome",
-          "done": false
+          "done": true
         },
         {
           "title": "Preserve mac-shell-mcp-1.0.4.tgz as evidence against an unpublish",
@@ -121,7 +123,7 @@
     }
   ],
   "detourStack": [],
-  "revision": 30,
+  "revision": 32,
   "archiveBackfilledAt": "2026-08-28T22:45:37.558Z",
   "pmVersion": "0.30.0",
   "platform": "claude-code"
