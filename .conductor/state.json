@@ -29,7 +29,7 @@
       "id": "npm-name-dispute",
       "title": "Reclaim or replace the mac-shell-mcp npm name (3rd-party republication)",
       "priority": "P0",
-      "status": "blocked",
+      "status": "queued",
       "role": "epic",
       "lane": "external",
       "links": [],
@@ -112,7 +112,7 @@
     }
   ],
   "detourStack": [],
-  "revision": 28,
+  "revision": 29,
   "archiveBackfilledAt": "2026-08-28T22:45:37.558Z",
   "pmVersion": "0.30.0",
   "platform": "claude-code"
