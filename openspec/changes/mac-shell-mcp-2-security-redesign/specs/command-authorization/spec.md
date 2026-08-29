@@ -117,14 +117,14 @@ The permitted flags SHALL be exactly:
 
 `grep -R` and `grep -S` are **excluded**, and the reason generalises: **flag semantics are implementation-dependent, so an allowlist must be conservative about any flag whose behavior varies.** Verified on one macOS machine, `-R` under `ugrep` followed symbolic links to both files and directories out of a configured root, while BSD `grep`'s `-R` did not and `-S` did — and `-S` is not even a valid option under `ugrep`. `-r` did not follow under either.
 
-Because programs are matched by resolved path, two hosts can resolve `grep` to different implementations with different flag behavior. The system SHALL therefore validate a command's flag allowlist against the **resolved program** rather than the command name, and refuse a flag the resolved program does not support.
+Because programs are matched by resolved path, two hosts can resolve `grep` to different implementations with different flag behavior. Policy SHALL therefore pin each command to its **expected resolved program path**, and its flag allowlist SHALL be authored for that program. Where the resolved path differs from the pinned one, the system SHALL refuse the command rather than run it under an allowlist written for a different implementation.
 
 `grep -f` is excluded as a path the scope check would have to cover for no benefit. No permitted flag on any command writes a file, executes a program, or names a configuration source.
 
-#### Scenario: A flag is validated against the resolved program
+#### Scenario: A command resolving to an unexpected program is refused
 
-- **WHEN** a permitted flag is not supported by the program actually resolved for that command
-- **THEN** the request is refused rather than passed through, since flag meaning varies between implementations of the same command name
+- **WHEN** a command resolves to a program path other than the one policy pins for it
+- **THEN** the request is refused, since the flag allowlist was authored for the pinned program and flag meaning varies between implementations of the same command name
 
 #### Scenario: A link-following recursion flag is refused
 
@@ -167,7 +167,7 @@ The system SHALL construct the environment of every executed command from an all
 
 ### Requirement: Confined authorization is computed from effect and scope
 
-For `execute_command`, the system SHALL classify every request by **effect** (`read` or `write`) crossed with **scope** — whether every path-shaped argument resolves inside a configured root — and SHALL then apply the command's configured permission of `allow`, `ask`, or `deny`. A request reaching outside the configured roots SHALL be refused by this tool. `execute_pipeline` is confined identically but restricted further to read-effect stages, as specified in the command-execution capability.
+For `execute_command`, the system SHALL classify every request by **effect** (`read` or `write`) crossed with **scope** — whether the request's working directory **and** every path-shaped argument resolve inside a configured root — and SHALL then apply the command's configured permission of `allow`, `ask`, or `deny`. A request reaching outside the configured roots SHALL be refused by this tool. `execute_pipeline` is confined identically but restricted further to read-effect stages, as specified in the command-execution capability.
 
 #### Scenario: Read inside a configured root is permitted
 
@@ -188,6 +188,21 @@ For `execute_command`, the system SHALL classify every request by **effect** (`r
 
 - **WHEN** any command is requested through `execute_command` and no roots are configured
 - **THEN** the request is refused and the refusal names the allowed commands and states where roots are configured
+
+### Requirement: The working directory is always a scope input
+
+The system SHALL include the request's working directory in every scope classification, for every tool. A request carrying **no** path-shaped argument SHALL be classified by its working directory alone, and SHALL NOT be treated as in-scope merely because the set of path-shaped arguments is empty.
+
+#### Scenario: A request with no path operand is scoped by its working directory
+
+- **WHEN** a request runs a recursive search with a pattern but no path operand, so it reads the working directory
+- **THEN** it is classified by that working directory
+- **AND** it is refused where the working directory lies outside every configured root, rather than passing because it named no path
+
+#### Scenario: An empty set of path arguments is not vacuously in scope
+
+- **WHEN** a request's arguments contain no path-shaped value at all
+- **THEN** the scope decision is made on the working directory, never defaulting to in-scope
 
 ### Requirement: Out-of-root work is reachable only through the external tool
 
@@ -251,9 +266,14 @@ The system SHALL treat an argument as path-shaped when it is not a flag and eith
 - **THEN** it is scope-checked against its nearest existing ancestor directory, and is in scope where that ancestor is inside a root
 - **AND** it is not refused merely for not existing, since refusing every such argument would make ordinary work impossible and drive a human to widen the roots
 
+#### Scenario: A bare dash denotes standard input, not a path
+
+- **WHEN** an argument is exactly `-`
+- **THEN** it denotes the request's supplied standard input rather than a path, and is not scope-checked as one
+
 #### Scenario: An argument that cannot be classified fails closed
 
-- **WHEN** an argument such as `@responsefile` or `-` cannot be confidently classified, and has no existing ancestor inside a root
+- **WHEN** an argument such as `@responsefile` cannot be confidently classified, and has no existing ancestor inside a root
 - **THEN** it is treated as out-of-scope rather than assumed confined
 
 ### Requirement: No tool mutates policy

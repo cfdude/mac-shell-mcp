@@ -26,25 +26,28 @@ The system SHALL locate its policy by checking, in order: an explicitly configur
 
 ### Requirement: A policy appearing at a new location is reported before it takes effect
 
-Because the discovery order prefers the working directory over the home directory, a file created inside a working directory would silently take precedence on the next start. The system SHALL record, on each run, both which source supplied policy **and a stable fingerprint of that source** — its filesystem identity where the source is a file, and a digest of its content where the source is host-supplied environment configuration, which has no filesystem identity — in a record at a documented default location that is itself a protected location. Where either the winning source or its identity differs from the previously recorded run, the system SHALL NOT adopt the new source. It SHALL instead fall back to the **built-in defaults — the default command set and no configured roots** — and refuse every request with a message naming the unacknowledged source and how to acknowledge it.
+Because the discovery order prefers the working directory over the home directory, a file created inside a working directory would silently take precedence on the next start. The system SHALL record, on each run, both which source supplied policy **and its filesystem identity**, in a record **keyed by discovery location** at a documented default location that is itself protected. Keying by location is required because discovery depends on the working directory: a single global record would refuse on every start for anyone alternating between two projects.
+
+**This gate applies to file sources only.** Host-supplied environment configuration is exempt, because setting it is already an out-of-band human action — the operator edits the host's own configuration — and it has no filesystem identity to compare. Applying the gate there would also be unacknowledgeable, since the acknowledging human's shell does not hold the host's environment. Where either the winning source or its identity differs from the previously recorded run, the system SHALL NOT adopt the new source. It SHALL instead fall back to the **built-in defaults — the default command set and no configured roots** — and refuse every request with a message naming the unacknowledged source and how to acknowledge it.
 
 Reporting the change is not sufficient on its own: this server communicates over stdio, so a warning reaches a host log rather than a person.
 
 **The record SHALL be updated only on a run that actually adopted a source.** A run that refused to adopt SHALL leave the record untouched, so that the refusal persists across every subsequent start until a human acts. Recording the refused source would adopt it on the next start; recording the built-in defaults would make the gate permanent.
 
-**Acknowledgement is performed by a human running the server's own command-line acknowledgement subcommand**, which records the current winning source and its identity into the previous-run record and exits. It SHALL NOT be reachable through any MCP tool, so the agent cannot invoke it. The new source SHALL NOT be able to acknowledge itself, on the same principle by which policy cannot exempt itself.
+**Acknowledgement is performed by a human running the server's own command-line acknowledgement subcommand**, which accepts the source to acknowledge explicitly and records it with its identity into the previous-run record, then exits. It SHALL NOT be reachable through any MCP tool, so the agent cannot invoke it. The new source SHALL NOT be able to acknowledge itself, on the same principle by which policy cannot exempt itself.
 
-**An absent previous-run record is a first run, not a change**: the system SHALL adopt the winning source and write the record. This is the bootstrap path, and it is safe because the record's location is protected, so the agent cannot delete it to manufacture a first run. An **unreadable or unparseable** record, by contrast, SHALL be treated as a changed source.
+**An absent previous-run record is a first run, not a change**: the system SHALL adopt the winning source and write the record — **except where the winning source is the working-directory file**, which SHALL always require acknowledgement, including on a first run. A repository can carry a policy file, so a fresh install whose first session opens a cloned repository would otherwise adopt a policy that project supplied, unattended. That file could name a legitimate program directory and admit an interpreter with an inline-code flag, which no later rule catches because inline code is not a script inside a root. An **unreadable or unparseable** record, by contrast, SHALL be treated as a changed source.
 
 #### Scenario: A newly appeared higher-precedence config does not silently win
 
 - **WHEN** policy was previously supplied by the home configuration file, and a config file now exists in the working directory
 - **THEN** startup reports that the winning source changed and does not adopt the new file unattended
 
-#### Scenario: Changed environment configuration is detected
+#### Scenario: Changed environment configuration is adopted without acknowledgement
 
-- **WHEN** policy is supplied by host environment configuration and its content differs from the previously recorded digest
-- **THEN** the change is detected, since environment configuration has no filesystem identity to compare
+- **WHEN** policy is supplied by host environment configuration and its content differs from the previous run
+- **THEN** it is adopted, because only a human with host access can change it — the same trust level acknowledgement establishes
+- **AND** a user editing the host's configuration form is therefore never left with a server that will not start
 
 #### Scenario: Replacing the file at the same path is still detected
 
@@ -79,10 +82,20 @@ Reporting the change is not sufficient on its own: this server communicates over
 - **THEN** the record is updated and the next start adopts that source and serves requests normally
 - **AND** no MCP tool offers this action
 
-#### Scenario: A first run adopts and records
+#### Scenario: A first run adopts a home or explicit source and records it
 
-- **WHEN** the server starts with no previous-run record at all
-- **THEN** it adopts the winning source and writes the record, rather than refusing forever
+- **WHEN** the server starts with no previous-run record and the winning source is the explicit path, the home file, or host environment configuration
+- **THEN** it adopts that source and writes the record, rather than refusing forever
+
+#### Scenario: A first run does NOT adopt a working-directory config
+
+- **WHEN** the server starts with no previous-run record and the winning source is a policy file in the working directory
+- **THEN** it refuses to adopt it and requires acknowledgement, because a cloned repository can carry that file and the first start would otherwise honour a policy the project supplied
+
+#### Scenario: Alternating between projects does not refuse forever
+
+- **WHEN** the server is started in one project, then another, then the first again, each with its own acknowledged configuration
+- **THEN** each start finds the record for that location and proceeds, because the record is keyed by discovery location
 
 #### Scenario: A corrupted previous-run record is treated as a change
 
