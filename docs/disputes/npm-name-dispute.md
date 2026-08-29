@@ -105,8 +105,8 @@ Gmail id `1a04ac76d8e3f3c8`. Confirmed carrying the `SENT` label, matching both 
 `from:` searches, with no bounce generated.
 **Escalate if no reply by Thursday 2026-09-03** — three business days (Mon 8/31, Tue 9/1, Wed 9/2).
 
-> **Verification note.** The message was moved to Trash shortly after sending, which made it appear
-> unsent: Gmail search **excludes Trash and Spam by default**, so `in:sent`, `to:` and `from:` all
+> **Verification note.** The message was accidentally moved to Trash shortly after sending (caught in
+> an unrelated bulk delete — no filter or account restriction involved), which made it appear unsent: Gmail search **excludes Trash and Spam by default**, so `in:sent`, `to:` and `from:` all
 > returned nothing while only `in:anywhere` found it. That is a search artifact, not a delivery
 > failure. When verifying a send, either scope the query with `in:anywhere` or confirm the `SENT`
 > label directly — an absence under default scope proves nothing about delivery.
