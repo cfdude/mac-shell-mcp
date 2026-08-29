@@ -29,12 +29,17 @@ A command's declared effect is a **label, not a guarantee**. Where a command off
 
 ### Requirement: The executed program is authorized, not only its arguments
 
-The system SHALL resolve the requested command to an absolute program path using a resolution that corrects case on case-insensitive filesystems and follows symbolic links, and SHALL perform that resolution **before** both the policy match and the in-root refusal below. It SHALL match policy by **resolved path**, never by basename. Programs SHALL be resolved only from configured program directories, and any program resolving inside a configured root SHALL be refused. A command carrying no declared effect SHALL be refused.
+The system SHALL resolve the requested command to an absolute program path using a resolution that corrects case on case-insensitive filesystems and follows symbolic links, and SHALL perform that resolution **before** both the policy match and the in-root refusal below. The system SHALL refuse to resolve programs from any directory writable by the user the server runs as. It SHALL match policy by **resolved path**, never by basename. Programs SHALL be resolved only from configured program directories, and any program resolving inside a configured root SHALL be refused. A command carrying no declared effect SHALL be refused.
 
 #### Scenario: A program written into a root cannot be executed
 
 - **WHEN** a permitted in-root write creates an executable file named after a permitted command inside a configured root, and a request asks to execute it
 - **THEN** the request is refused, because roots hold data rather than programs
+
+#### Scenario: A program directory writable by the server's own user is refused
+
+- **WHEN** a configured program directory is writable by the user the server runs as
+- **THEN** the server reports the directory as unsafe and does not resolve programs from it, because a writable program directory lets any write primitive author a program that resolves as a permitted command
 
 #### Scenario: A symlink in a program directory cannot reach into a root
 
@@ -53,7 +58,9 @@ The system SHALL resolve the requested command to an absolute program path using
 
 ### Requirement: The shipped default command set is enumerated and bounded
 
-The system SHALL ship a default set containing only commands satisfying the admission test above, and SHALL document, for each, the bounded grammar under which it holds. The default set SHALL be exactly: `ls`, `pwd`, `echo`, `cat`, `head`, `tail`, `wc`, `grep`, and `rg` — each restricted to an allowlist of flags that select or format output and never write, execute, or read configuration.
+The system SHALL ship a default set containing only commands satisfying the admission test above, and SHALL document, for each, the bounded grammar under which it holds. The default set SHALL be exactly: `ls`, `pwd`, `echo`, `cat`, `head`, `tail`, `wc`, and `grep` — each restricted to an allowlist of flags that select or format output and never write, execute, or read configuration. Every default command SHALL resolve from a default program directory, so that a fresh installation can run what it advertises.
+
+`rg` is deliberately excluded despite being the better search tool: it installs outside the system program directories, and admitting the directory it lives in would make a user-writable location a source of programs.
 
 `find`, `git`, `rm`, and every command interpreter SHALL be absent from the default set. A human MAY add any of them by explicit configuration.
 
@@ -67,6 +74,11 @@ The system SHALL ship a default set containing only commands satisfying the admi
 
 - **WHEN** the default set is inspected
 - **THEN** each command carries a flag allowlist under which it cannot execute another program, cannot write any path, and cannot read configuration from its environment
+
+#### Scenario: Every default command resolves from a default program directory
+
+- **WHEN** a fresh installation runs each command in its default set
+- **THEN** each resolves from a configured default program directory, so the shipped policy advertises nothing it cannot run
 
 ### Requirement: The child environment is constructed, never inherited
 

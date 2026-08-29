@@ -27,7 +27,10 @@ context: |
     declared effect is a LABEL, NOT A GUARANTEE -- `find` is declared read and
     `-fprintf` writes attacker-chosen content anywhere. Protection therefore
     keys on the OPERATION a request performs, never on the label.
-  - The default set is exactly: ls pwd echo cat head tail wc grep rg.
+  - The default set is exactly: ls pwd echo cat head tail wc grep. NOT rg --
+    it lives outside /usr/bin and admitting /opt/homebrew/bin would make a
+    user-writable directory a program source. Program directories must not be
+    writable by the user the server runs as.
     `find`, `git`, `rm` and every interpreter are ABSENT -- addable only by
     explicit human configuration. git executes commands from local .git/config
     and no env var disables it.
