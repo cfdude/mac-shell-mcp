@@ -50,6 +50,45 @@ The load-bearing annotation is `openWorldHint`, not `readOnlyHint`: `mkdir ./bui
 
 The split is only real if enforced: the confined tool **refuses** an out-of-scope or delete request rather than rerouting it, and pipelines authorize every stage independently. These are the primary test targets.
 
+### Authorize the program, not only its arguments
+
+The effect × scope model as first written authorized *arguments* and never the binary. That is a hole in the abstraction, not a missing rule: 1.x matches policy by basename (`src/services/command-service.ts:258`) and then executes the requested string verbatim (`:336`), so a file the agent writes into a root and names `ls` matches the permitted `ls` and runs.
+
+Programs are therefore resolved to an absolute path, matched **by resolved path rather than basename**, resolved only from configured program directories, and refused outright when they resolve inside a configured root. Roots hold data; they are never a source of code. A command carrying no declared effect denies rather than defaulting.
+
+### Deny exec-capable commands as a class, not by enumeration
+
+The first draft denied `find -exec` and destructive `git` subcommands and considered the problem handled. It is not enumerable. Verified live during review:
+
+```
+git -c alias.pwn='!echo OWNED; id -un' pwn     → executes arbitrary shell
+awk 'BEGIN{system("id -un")}'                  → awk supplies its own shell
+```
+
+Neither carries a path-shaped argument; both are read-effect and fully confined. `perl -e`, `python -c`, `osascript -e`, `tar --use-compress-program=`, `rsync -e`, `xargs`, `env` and `sed -i` are the same shape, and any list of them is a list of the ones someone happened to think of.
+
+So the rule is a **class**: a command that can spawn a process, evaluate code, or invoke a shell is denied unless policy names it explicitly. The per-command argument rules remain, but they are now a second layer over commands already permitted, and the documentation states plainly that they cover only the commands they name.
+
+`git` additionally loses `-c`, `--exec-path`, `-C` and configuration-writing subcommands, and its destructive-subcommand rule becomes order- and spelling-insensitive — `git clean -xdf` was accepted by the first draft's literal `-fdx` denial. `git gc --prune=now` and `git reflog expire` are denied too, because the delete-safety recoverability report would otherwise confidently report content that had just been destroyed.
+
+### Protect by filesystem identity, and protect every discovery location
+
+Path-string comparison fails three ways, two verified on this machine:
+
+- **Case.** `realpathSync('./CFG.JSON')` returns the caller's casing on APFS; only `realpathSync.native` case-corrects. A string-compared denied set is bypassed by `~/.MAC-SHELL-MCP.JSON`.
+- **Hard links.** `ln <config> <root>/cfg` makes the config reachable at an unprotected path, and writing through the link truncates the original inode.
+- **Shadowing.** Protection covering only the *active* policy file lets the agent write a config into a working directory, which — being higher in the discovery order — wins outright on the next start. That is CWE-862 deferred by one restart.
+
+Protection therefore compares `(st_dev, st_ino)`, covers **every** path in the discovery order plus the audit log, refuses link creation where either operand resolves to a protected inode, and extends to delete-effect commands as well as write — the first draft said "write-effect", while the model defines `delete` as a *separate* effect, so `rm <config>` escaped the guard the task list claimed to test.
+
+A change in which source supplies policy is reported at startup and not adopted unattended.
+
+### Deletion is a two-call contract, because there is nothing else to confirm with
+
+The first draft required "confirmation" before a directory delete while the design simultaneously ruled out this server implementing approval, and the target host supports no elicitation. The only remaining carrier would have been a `confirm: true` parameter the agent sets itself — `approve_command` under a new name.
+
+Instead the first call never deletes: it refuses and returns the enumeration and recoverability report. Deletion happens only on a separate subsequent call, which the host prompts for independently. Where no interactive client is present, deletes are refused outright.
+
 ### Path detection is heuristic and fails closed
 
 An argument is path-shaped when it is not a flag and either contains a separator or `~`, or resolves to an existing entry. Relative paths resolve against the request's working directory; comparison happens after `realpath` on both sides and on whole segments.
@@ -94,7 +133,9 @@ Because this model relies on `git` as the recovery mechanism, `git` is permitted
 
 ## Risks / Trade-offs
 
-- **Path detection is heuristic** → fails closed to out-of-scope; documented in `SECURITY.md` as a known limit rather than hidden.
+- **Path detection is heuristic** → fails closed to out-of-scope; documented in `SECURITY.md` as a known limit rather than hidden. Attached flag values (`--output=/etc/x`, `-o/etc/x`) are split and scope-checked, because a value fused to a flag is never "not a flag" and so never reached the heuristic at all.
+- **The exec-capable class is a judgement, not a proof** → a command nobody classified as exec-capable, that turns out to be, defeats it. Mitigated by denying the class by default rather than permitting by default, and by stating the limit in `SECURITY.md` instead of implying completeness.
+- **TOCTOU between resolution and execution** → the agent can race its own concurrent calls, swapping a symlink between the scope check and the exec. Distinct from the another-process non-goal above. Mitigated by resolving once and executing against the resolved path.
 - **Over-prompting degrades into always-allow** — a human who is asked too often will disable the gate → mitigated by making the confined tier genuinely useful (reads and writes inside roots are free) so `ask` is rare in normal work, and by `suggest_policy_config` turning observed usage into config.
 - **The policy file is a single point of trust** → self-protection stops *this server* writing it and `chmod 444` raises the bar for everything else, but a separate process running as the same user can still rewrite it. Inherent to file-based config; stated in the specs' non-goals rather than papered over.
 - **`ask` is only as strong as the host** — a host set to always-allow converts every `ask` into `allow` → headless deployments degrade to `deny`; a misconfigured interactive host is outside our control and is documented.

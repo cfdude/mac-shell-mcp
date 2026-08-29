@@ -21,11 +21,13 @@ The system SHALL append a record for every request it handles, whether permitted
 #### Scenario: Existing records are never rewritten
 
 - **WHEN** any new record is written
-- **THEN** previously written records are unchanged
+- **THEN** previously written records are unchanged within the active log file
 
-### Requirement: The log is enabled by default and bounded
+### Requirement: The log is enabled by default and bounded by rotation
 
-The system SHALL record by default, SHALL write to a configurable location, and SHALL bound the log's size so it cannot grow without limit.
+The system SHALL record by default, SHALL write to a configurable location, and SHALL bound the log's size by **rotating** to a new file rather than by truncating or rewriting the active one, so that the append-only guarantee holds within each file. The system SHALL report where rotated records went.
+
+The active log SHALL be protected from write- and delete-effect commands, as required by the policy-configuration capability, so that append-only is a property of the system rather than a convention the agent may break.
 
 #### Scenario: Recording happens without configuration
 
@@ -35,7 +37,12 @@ The system SHALL record by default, SHALL write to a configurable location, and 
 #### Scenario: The log does not grow unbounded
 
 - **WHEN** the log reaches its configured size limit
-- **THEN** the limit is enforced and recording continues
+- **THEN** the active file is rotated, recording continues in a new file, and no existing record is rewritten
+
+#### Scenario: The agent cannot erase its own trail
+
+- **WHEN** a request runs a write- or delete-effect command against the active log
+- **THEN** the request is refused
 
 ### Requirement: The server proposes configuration but cannot apply it
 
@@ -56,3 +63,9 @@ The system SHALL offer a means of summarizing recorded history into suggested co
 - **WHEN** a summary suggesting additional commands is produced
 - **THEN** the set of permitted commands is unchanged
 - **AND** the policy file is not written, consistent with the server being unable to modify its own configuration
+
+#### Scenario: Repeated refusals cannot manufacture a suggestion
+
+- **WHEN** a command that has never been permitted is requested many times and refused each time
+- **THEN** it does not appear as a suggested addition
+- **AND** any count derived from agent-initiated requests is labelled as such, so a human is not persuaded by volume the agent chose

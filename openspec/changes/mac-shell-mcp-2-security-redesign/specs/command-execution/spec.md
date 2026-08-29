@@ -57,26 +57,31 @@ The system SHALL apply a configurable maximum output size, and where a command e
 
 ### Requirement: Requests may specify working directory, standard input, and glob expansion
 
-The system SHALL accept a working directory, which it validates against configured roots; SHALL accept text supplied to the command's standard input; and SHALL expand glob patterns only when a request explicitly asks for it.
+The system SHALL accept a working directory, a text value supplied to the command's standard input, and an explicit request for glob expansion. The working directory SHALL be confined to the configured roots for the confined and pipeline tools, and MAY lie outside them for the external tool, which exists to reach outside. Glob expansion SHALL be confined for the confined and pipeline tools, and SHALL follow the request's scope for the external tool.
 
-#### Scenario: Working directory is validated
+#### Scenario: The confined tool refuses an outside working directory
 
-- **WHEN** a request supplies a working directory outside every configured root
+- **WHEN** `execute_command` supplies a working directory outside every configured root
 - **THEN** the request is refused
+
+#### Scenario: The external tool may work outside the roots
+
+- **WHEN** `execute_external_command` supplies a working directory outside the configured roots and policy permits the command
+- **THEN** the working directory is accepted, because confining it would make the tool unusable for its stated purpose
 
 #### Scenario: Globs are not expanded by default
 
 - **WHEN** `find . -name "*.ts"` is requested without asking for glob expansion
 - **THEN** `*.ts` reaches the command literally, so the command performs its own matching
 
-#### Scenario: Requested glob expansion stays within roots
+#### Scenario: Requested glob expansion respects the tool's scope
 
-- **WHEN** a request asks for glob expansion and the pattern would match paths outside every configured root
+- **WHEN** `execute_command` asks for glob expansion and the pattern would match paths outside every configured root
 - **THEN** those matches are excluded
 
 ### Requirement: Pipelines run in process and authorize every stage
 
-The system SHALL support composing commands by connecting each stage's standard output to the next stage's standard input, without a shell. Every stage SHALL be authorized independently, and the pipeline SHALL be restricted to read-effect commands.
+The system SHALL support composing commands by connecting each stage's standard output to the next stage's standard input, without a shell. Every stage SHALL be authorized independently and completely — program authorization, effect, scope confinement, per-command argument rules, and permission — exactly as the confined tool authorizes a single call. The pipeline SHALL be restricted to read-effect commands **and** to arguments resolving inside the configured roots.
 
 #### Scenario: A later stage cannot inherit an earlier stage's acceptability
 
@@ -84,7 +89,22 @@ The system SHALL support composing commands by connecting each stage's standard 
 - **THEN** the pipeline is refused
 - **AND** no stage executes
 
+#### Scenario: A read-only pipeline cannot reach outside the roots
+
+- **WHEN** a pipeline requests `cat ~/.aws/credentials` followed by `grep AKIA`, where both stages are read-effect
+- **THEN** the pipeline is refused, because read effect does not imply confinement
+- **AND** no stage executes
+
 #### Scenario: A read-only pipeline succeeds
 
 - **WHEN** a pipeline requests two permitted read-effect commands operating inside configured roots
 - **THEN** the first stage's output is supplied to the second, and the final stage's result is returned
+
+### Requirement: Execution is bounded by a timeout
+
+The system SHALL apply a configurable execution timeout to every command and pipeline, and SHALL terminate a command exceeding it, reporting the timeout distinctly from a non-zero exit.
+
+#### Scenario: A long-running command is terminated
+
+- **WHEN** a command runs longer than the configured timeout
+- **THEN** it is terminated and the result reports that it timed out, distinguishably from a command that exited non-zero

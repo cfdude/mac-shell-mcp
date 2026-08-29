@@ -23,11 +23,11 @@
 
 ## 4. Path guard and config self-protection (specs: command-authorization, policy-configuration)
 
-- [ ] 4.1 Write failing tests for path-shape detection covering `grep -r pattern /dir` (only `/dir` is a path), `~` expansion, relative resolution against cwd, and ambiguous arguments failing closed to out-of-scope; verify they fail first
+- [ ] 4.1 Write failing tests for path-shape detection covering `grep -r pattern /dir` (only `/dir` is a path), `~` expansion, relative resolution against cwd, **attached flag values (`--output=/etc/passwd`, `-o/etc/passwd`, `--file=~/.aws/credentials`) being split and scope-checked**, and unclassifiable arguments (`@responsefile`, `-`) failing closed to out-of-scope; verify they fail first
 - [ ] 4.2 Implement path-shape detection and verify 4.1's tests pass
 - [ ] 4.3 Write failing tests for root confinement covering `realpath` resolution, a symlink inside a root pointing outside it, and segment-aware prefix matching (`/tmp/foo` must not match `/tmp/foobar`); implement, and verify they pass
-- [ ] 4.4 Write failing tests for config self-protection — `chmod` against the policy file, `mv`/`cp` **into** it, `rm`/`touch`/`tee` against it, any write against its **parent directory**, a symlink resolving to it, and a policy file attempting to exempt its own path — each denied even when the file sits inside an allowed root and the command is otherwise permitted; verify all fail first
-- [ ] 4.5 Implement config self-protection as a non-configurable denied-path set checked after `realpath`, and verify 4.4's tests pass and that reading the policy file is still permitted
+- [ ] 4.4 Write failing tests for self-protection — `chmod` against the policy file; `mv`/`cp` **into** it; `rm` against it (**delete is a separate effect from write, so a write-only guard misses it**); any write or delete against its **parent directory**; a symlink resolving to it; **a path differing only by letter case** (verified: `realpathSync` preserves caller casing on APFS, so string comparison is bypassed while `(st_dev, st_ino)` catches it); **a hard link created inside a root then written through**; **a config written to a higher-precedence discovery location while a different one is active**; the **audit log**; **any repository `.git` directory**; and a policy file attempting to exempt its own path — each denied even when inside an allowed root with the command otherwise permitted; verify all fail first
+- [ ] 4.5 Implement self-protection as a non-configurable denied set keyed on **filesystem identity `(st_dev, st_ino)` rather than path strings**, covering every path in the discovery order plus the audit log and repository metadata directories, applied to write- **and delete**-effect commands, refusing link creation where either operand resolves to a protected inode; verify 4.4's tests pass and that reading the policy file is still permitted
 
 ## 5. Shell-free execution (spec: command-execution)
 
@@ -36,22 +36,27 @@
 - [ ] 5.3 Write failing tests asserting a non-zero exit is a normal result — `grep` with no match reports `exitCode: 1`, is not flagged as an error, and preserves stdout — and that a failure to spawn IS flagged as an error; implement, and verify they pass
 - [ ] 5.4 Implement an explicit output cap with graceful truncation and verify a test asserts oversized output returns partial content marked truncated with the omitted byte count, rather than throwing
 - [ ] 5.5 Return structured content with an output schema carrying stdout, stderr, exit code, truncation and duration, and verify a test asserts no empty text block is emitted when stderr is empty
-- [ ] 5.6 Implement `cwd` (validated against roots), `stdin`, and opt-in `expandGlobs` defaulting to false; verify tests assert `find . -name "*.ts"` receives `*.ts` literally when expansion is not requested, and that requested expansion excludes matches outside roots
+- [ ] 5.6 Implement an execution timeout reported distinguishably from a non-zero exit; implement `cwd` (confined for `execute_command` and pipelines, permitted outside the roots for `execute_external_command`, which exists to reach outside), `stdin`, and opt-in `expandGlobs` defaulting to false; verify tests assert `find . -name "*.ts"` receives `*.ts` literally when expansion is not requested, and that requested expansion excludes matches outside roots
 
 ## 6. Authorization (spec: command-authorization)
+
+- [ ] 6.0 Write failing tests for **program authorization**: a file written into a root, made executable and named after a permitted command (`ls`) must be refused; a program whose basename matches a permitted command but whose resolved path differs must be refused; a command with no declared effect must be refused. Implement resolution to an absolute path from configured program directories, matching by resolved path rather than basename, and verify the tests pass
+- [ ] 6.0a Write failing tests for the **exec-capable command class**: `awk 'BEGIN{system("id")}'`, `perl -e`, `python -c`, `osascript -e`, `env`, `xargs` and `sh` are each refused by class even with no path-shaped argument; a command policy names explicitly still runs. Verify the awk case fails before the fix — it is a confirmed live shell-execution path
 
 - [ ] 6.1 Write failing tests for the effect × scope matrix — read/write inside roots permitted, read/write outside refused, delete handled per delete-safety — and verify they fail first
 - [ ] 6.2 Implement effect classification and the scope decision, and verify 6.1's tests pass
 - [ ] 6.3 Write failing tests asserting `execute_command` **refuses** rather than reroutes an out-of-scope or delete request, and that the refusal names `execute_external_command`; implement, and verify they pass
-- [ ] 6.4 Write failing tests asserting `execute_pipeline` authorizes every stage independently — a permitted read followed by a delete refuses the whole pipeline and executes no stage — then implement in-process stdout→stdin wiring and verify they pass
-- [ ] 6.5 Implement per-command argument rules and verify tests assert `find -exec`/`-execdir`/`-ok`/`-okdir`/`-delete`/`-fprintf` are refused, and that `git clean -fdx`, `git reset --hard`, `git push --force`, `git push --force-with-lease` and `git checkout -- .` are refused while other `git` subcommands still run
+- [ ] 6.4 Write failing tests asserting `execute_pipeline` authorizes every stage **completely** — program, effect, scope, argument rules and permission — so that a permitted read followed by a delete refuses the whole pipeline, **and a pipeline of two read-effect stages reaching outside the roots (`cat ~/.aws/credentials | grep AKIA`) is also refused, since read effect does not imply confinement**; then implement in-process stdout→stdin wiring and verify no stage executes on refusal
+- [ ] 6.5 Implement per-command argument rules and verify tests assert `find -exec`/`-execdir`/`-ok`/`-okdir`/`-delete`/`-fprintf` are refused; that `git -c`, `--exec-path` and `-C` are refused (**verified live: `git -c alias.pwn='!echo OWNED; id -un' pwn` executes arbitrary shell**); that `git clean` is refused in **any** flag order or fusion (`-fdx`, `-xdf`, `-x -d -f` — `git clean -xdf` was verified accepted by git, so a literal `-fdx` denial is insufficient); that `git reset --hard`, `git push --force`, `git push --force-with-lease` and `git checkout -- .` are refused; and that `git gc --prune=now` and `git reflog expire` are refused because the recoverability ladder depends on them
 - [ ] 6.6 Correct `allowedArgs` to set semantics (every argument matches at least one pattern, position-independent) that **rejects** on mismatch rather than downgrading, and verify a test covers `ls -l somefile` being permitted where the old positional logic refused it
 
 ## 7. Delete safety (spec: delete-safety)
 
+- [ ] 7.0 Implement deletion as a **two-call contract**: the first call never deletes, refusing and returning the enumeration plus recoverability report; deletion occurs only on a separate subsequent call. Verify tests assert no parameter lets the caller assert its own approval, and that a delete is refused outright when no interactive client is present
+
 - [ ] 7.1 Write failing tests asserting deletion is denied by default, denied outside roots regardless of policy, and that `-rf`/`-fr`/`-r -f`/`--recursive --force` and `--no-preserve-root` are refused in every spelling regardless of policy or target; verify they fail first
 - [ ] 7.2 Implement the structural delete rules and verify 7.1's tests pass
-- [ ] 7.3 Implement the git recoverability ladder over the six states (tracked+clean+pushed, tracked+clean+unpushed, tracked+modified, untracked, ignored, no repository) and verify tests assert each yields its distinct message — especially that an **ignored file inside a repository** is reported unrecoverable
+- [ ] 7.3 Implement the git recoverability ladder over the six states (tracked+clean+pushed, tracked+clean+unpushed, tracked+modified, untracked, ignored, no repository), resolving submodule and linked-worktree boundaries so recoverability is never reported from a repository whose history lacks the content; verify tests assert each yields its distinct message — especially that an **ignored file inside a repository** is reported unrecoverable
 - [ ] 7.4 Implement directory-deletion enumeration (file count, total size, content sample) before confirmation, and verify a test asserts the counts are reported prior to any deletion
 
 ## 8. Audit log and suggestion (spec: audit-and-suggestion)
@@ -61,6 +66,9 @@
 - [ ] 8.3 Implement `suggest_policy_config` emitting both the config-file fragment and the host-extension field value, and verify tests assert it reflects observed counts, grants nothing, and does not write the policy file
 
 ## 9. Tool surface (specs: command-authorization, policy-configuration)
+
+- [ ] 9.0 Implement `get_policy`, returning permitted commands with their effects and permissions plus the configured roots, exposing no means of alteration and no filesystem contents; verify a test asserts an agent can discover what is allowed without attempting refused calls
+- [ ] 9.0a Implement interactive-client detection from the capabilities declared at session initialisation, and verify tests assert `ask` resolves to the host prompt when interactive and to `deny` when not — never to `allow`
 
 - [ ] 9.1 Write a failing test asserting `ListTools` contains none of `add_to_whitelist`, `update_security_level`, `remove_from_whitelist`, `approve_command`, `deny_command`, `get_pending_commands`; verify it fails first
 - [ ] 9.2 Remove those six handlers, their schemas, and the pending-approval queue (disposing of the never-timing-out promise and the re-execution path that skipped re-validation), and verify 9.1 passes

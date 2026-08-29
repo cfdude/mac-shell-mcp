@@ -24,6 +24,20 @@ The system SHALL locate its policy by checking, in order: an explicitly configur
 - **WHEN** the server starts
 - **THEN** it reports which policy source was used
 
+### Requirement: A policy appearing at a new location is reported before it takes effect
+
+Because the discovery order prefers the working directory over the home directory, a file created inside a working directory would silently take precedence on the next start. The system SHALL record which source supplied policy on each run, and where the winning source differs from the previous run's, SHALL report the change at startup and refuse to start until the new source is acknowledged by configuration.
+
+#### Scenario: A newly appeared higher-precedence config does not silently win
+
+- **WHEN** policy was previously supplied by the home configuration file, and a config file now exists in the working directory
+- **THEN** startup reports that the winning source changed and does not adopt the new file unattended
+
+#### Scenario: An unchanged source starts normally
+
+- **WHEN** the winning source is the same as the previous run's
+- **THEN** startup proceeds without prompting
+
 ### Requirement: Policy is immutable for the lifetime of the process
 
 The system SHALL read policy once at startup and SHALL NOT re-read or modify it while running.
@@ -33,28 +47,45 @@ The system SHALL read policy once at startup and SHALL NOT re-read or modify it 
 - **WHEN** the policy file is changed while the server is running
 - **THEN** the running server's decisions are unchanged until it is restarted
 
-### Requirement: The server cannot modify its own configuration
+### Requirement: The server cannot modify any policy location or its own audit log
 
-The system SHALL refuse every write-effect command whose resolved target is the active policy file **or that file's parent directory**, regardless of configured roots, regardless of the command's permissions, and regardless of any exemption expressed in the policy itself. Reading the policy file SHALL remain permitted.
+The system SHALL refuse every **write-effect or delete-effect** command whose resolved target is any path in the policy discovery order — not only the active one — or the parent directory of any such path, or the active audit log. This SHALL hold regardless of configured roots, regardless of the command's permissions, and regardless of any exemption expressed in policy itself.
+
+Protected paths SHALL be identified by **filesystem identity — device and inode — rather than by path string**, and the system SHALL refuse any request creating a hard or symbolic link whose either operand resolves to a protected path. Reading a policy file SHALL remain permitted.
 
 #### Scenario: The server cannot unlock its own policy
 
 - **WHEN** a request runs `chmod` against the active policy file
 - **THEN** the request is refused, even if `chmod` is otherwise permitted and the file lies inside a configured root
 
+#### Scenario: Deleting the policy file is refused
+
+- **WHEN** a request runs a delete-effect command against the active policy file
+- **THEN** the request is refused, because protection covers delete as well as write
+
 #### Scenario: The policy file cannot be replaced
 
 - **WHEN** a request runs `mv` or `cp` with the active policy file as its destination
 - **THEN** the request is refused, because replacing a file requires no write permission on the file itself
 
-#### Scenario: The policy file's directory is protected
+#### Scenario: A path differing only by case is still protected
 
-- **WHEN** a request performs any write-effect command against the directory containing the active policy file
+- **WHEN** a request targets the policy file using different letter case on a case-insensitive filesystem
+- **THEN** the request is refused, because protection compares filesystem identity rather than the path string
+
+#### Scenario: A hard link cannot launder access to the policy file
+
+- **WHEN** a request creates a hard link to the policy file inside a configured root, or writes through such a link
 - **THEN** the request is refused
 
-#### Scenario: A symlink to the policy file does not launder access
+#### Scenario: An inactive discovery location is protected too
 
-- **WHEN** a request targets a symbolic link that resolves to the active policy file
+- **WHEN** a request writes a policy file into a configured working directory while policy is currently supplied by the home configuration file
+- **THEN** the request is refused, because every location in the discovery order is protected
+
+#### Scenario: The audit log cannot be rewritten or removed
+
+- **WHEN** a request runs any write- or delete-effect command against the active audit log
 - **THEN** the request is refused
 
 #### Scenario: Policy cannot exempt itself
@@ -67,9 +98,14 @@ The system SHALL refuse every write-effect command whose resolved target is the 
 - **WHEN** a request reads the active policy file with a permitted read command
 - **THEN** the request succeeds
 
-### Requirement: Policy declares roots, commands, tools, and per-command permissions
+### Requirement: Policy declares roots, programs, commands, effects, arguments, tools, and permissions
 
-The system SHALL accept configured roots, permitted commands, denied commands, enabled tools, and a per-command permission of `allow`, `ask`, or `deny`. A denied command SHALL remain denied even if also listed as permitted. A tool that is not enabled SHALL NOT be offered.
+The system SHALL accept: configured roots; the program directories from which commands may be resolved; permitted commands, each with its **effect** and optional **permitted argument patterns**; denied commands; enabled tools; and a per-command permission of `allow`, `ask`, or `deny`. A denied command SHALL remain denied even if also listed as permitted. A tool that is not enabled SHALL NOT be offered.
+
+#### Scenario: A command's effect comes from policy
+
+- **WHEN** the effective policy is inspected
+- **THEN** every permitted command carries an effect, which is what the authorization decision consumes
 
 #### Scenario: Denial beats permission
 
@@ -81,15 +117,20 @@ The system SHALL accept configured roots, permitted commands, denied commands, e
 - **WHEN** the policy omits a tool from the enabled tools
 - **THEN** that tool is absent when a client lists available tools
 
-### Requirement: `ask` degrades to `deny` without an interactive client
+### Requirement: `ask` requires an interactive client and otherwise denies
 
-Where a command's permission is `ask` and no interactive client is present to prompt a human, the system SHALL refuse the request. It SHALL NOT treat `ask` as `allow`.
+The system SHALL determine at startup whether an interactive client is present, from the capabilities the client declares when the session is initialised. Where a command's permission is `ask` and no interactive client is present, the system SHALL refuse the request. It SHALL NOT treat `ask` as `allow`.
 
 #### Scenario: Headless operation refuses rather than permits
 
-- **WHEN** a command whose permission is `ask` is requested and no interactive client is present
+- **WHEN** a command whose permission is `ask` is requested and the client declared no interactive capability at initialisation
 - **THEN** the request is refused
 - **AND** startup output records that `ask` was downgraded to `deny`
+
+#### Scenario: An interactive client leaves the decision to the host
+
+- **WHEN** a command whose permission is `ask` is requested and the client declared an interactive capability
+- **THEN** the request is surfaced to the host for approval rather than executed directly
 
 ### Requirement: A fresh installation is safe and self-explanatory
 
