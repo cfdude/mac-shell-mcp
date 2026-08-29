@@ -26,7 +26,11 @@ The system SHALL locate its policy by checking, in order: an explicitly configur
 
 ### Requirement: A policy appearing at a new location is reported before it takes effect
 
-Because the discovery order prefers the working directory over the home directory, a file created inside a working directory would silently take precedence on the next start. The system SHALL record, on each run, both which source supplied policy **and that source's filesystem identity**. Where either the winning source or its identity differs from the previously recorded run, the system SHALL report the change at startup and SHALL NOT adopt the new source until a human acknowledges it out of band. The record of the previous run SHALL itself be a protected location.
+Because the discovery order prefers the working directory over the home directory, a file created inside a working directory would silently take precedence on the next start. The system SHALL record, on each run, both which source supplied policy **and that source's filesystem identity**, in a record at a documented default location that is itself a protected location. Where either the winning source or its identity differs from the previously recorded run, the system SHALL NOT adopt the new source. It SHALL instead fall back to the **built-in defaults — the default command set and no configured roots** — and refuse every request with a message naming the unacknowledged source and how to acknowledge it.
+
+Reporting the change is not sufficient on its own: this server communicates over stdio, so a warning reaches a host log rather than a person.
+
+An unreadable or unparseable previous-run record SHALL be treated as a changed source, not as an absent one.
 
 #### Scenario: A newly appeared higher-precedence config does not silently win
 
@@ -40,8 +44,19 @@ Because the discovery order prefers the working directory over the home director
 
 #### Scenario: An unchanged source starts normally
 
-- **WHEN** the winning source is the same as the previous run's
+- **WHEN** the winning source is the same as the previous run's, with the same filesystem identity
 - **THEN** startup proceeds without prompting
+
+#### Scenario: An unacknowledged change refuses every request
+
+- **WHEN** the winning source has changed and no human has acknowledged it
+- **THEN** the server runs on built-in defaults with no roots, and refuses every request while naming the unacknowledged source
+- **AND** it does not merely log a warning and continue, since a stdio server's warning reaches no person
+
+#### Scenario: A corrupted previous-run record is treated as a change
+
+- **WHEN** the previous-run record cannot be read or parsed
+- **THEN** the source is treated as changed rather than as unrecorded
 
 ### Requirement: Policy is immutable for the lifetime of the process
 
@@ -58,7 +73,10 @@ The system SHALL refuse every request that **would write to, create, replace, or
 
 - any path in the policy discovery order — not only the active one — or **any ancestor directory** of such a path;
 - any configured **program directory**, or any entry within it;
-- the **audit log directory** and every file in it, not only the currently active log file.
+- the **audit log directory** and every file in it, not only the currently active log file;
+- the **previous-run record**.
+
+Each of these SHALL have a documented default location, since a path the system cannot name is a path it cannot protect. By default the audit log directory, the previous-run record, and the home configuration file all reside under a single `mac-shell-mcp` directory in the user's home configuration area.
 
 This SHALL hold regardless of configured roots, regardless of the command's permissions, and regardless of any exemption expressed in policy itself.
 
@@ -168,6 +186,20 @@ The system SHALL treat a client as interactive **only** where it declares the MC
 
 - **WHEN** a command whose permission is `ask` is requested and the client declared `elicitation`
 - **THEN** the human is asked before the command runs
+
+### Requirement: A root must be a bounded working location
+
+The system SHALL refuse to accept the user's home directory or the filesystem root as a configured root, and SHALL report at startup any configured root containing well-known credential locations. A root is intended to be a project or working directory.
+
+#### Scenario: An over-broad root is refused
+
+- **WHEN** policy configures the user's home directory or `/` as a root
+- **THEN** the server refuses to start with that policy and names the offending root
+
+#### Scenario: A root containing credentials is reported
+
+- **WHEN** a configured root contains a well-known credential location such as an `.ssh` or `.aws` directory
+- **THEN** the server reports it at startup, because confinement makes everything inside a root freely readable
 
 ### Requirement: A fresh installation is safe and self-explanatory
 

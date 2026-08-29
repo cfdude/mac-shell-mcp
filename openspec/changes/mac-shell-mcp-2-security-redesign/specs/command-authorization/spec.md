@@ -56,11 +56,60 @@ The system SHALL resolve the requested command to an absolute program path using
 - **WHEN** a request names a command for which policy declares no effect
 - **THEN** the request is refused rather than defaulting to any effect
 
+### Requirement: A command may not reach paths the scope check never saw
+
+Scope confinement inspects the arguments of a request. A command that **discovers further paths while running** — by walking a directory tree, or by following a link during traversal — can therefore reach paths no check examined. The system SHALL exclude, from every flag allowlist, any option causing a command to traverse into symbolic links, and SHALL treat such an option as disqualifying for the default set.
+
+#### Scenario: Recursive traversal cannot follow a link out of a root
+
+- **WHEN** a configured root contains a symbolic link to a file outside every root, and a request runs a recursive search over that root
+- **THEN** the content outside the roots is not returned, because link-following traversal options appear in no allowlist
+- **AND** this holds even though the argument named only the root, which passed the scope check
+
+#### Scenario: A hard link inside a root does not widen scope
+
+- **WHEN** a path inside a configured root is a hard link to a file outside every root
+- **THEN** the request is refused, scope being judged on filesystem identity rather than on the path alone
+
+### Requirement: An argument naming a program to execute is program-authorized
+
+Where a command accepts an argument whose value **names a program the command will execute**, the system SHALL subject that value to program authorization — resolution from a program directory, and refusal if it resolves inside a configured root — and SHALL NOT treat a successful scope check as sufficient. A value inside a root passes scope precisely because it is confined, which is why scope alone must never authorize execution.
+
+#### Scenario: A helper program named by a flag is not authorized by being in-scope
+
+- **WHEN** a command is given a flag whose value names a pre-processor or helper program located inside a configured root
+- **THEN** the request is refused, even though the value resolves inside a root and so passes the scope check
+
+#### Scenario: A script argument is not a permitted program
+
+- **WHEN** a human has added an interpreter to policy and a request asks it to run a script located inside a configured root
+- **THEN** the request is refused, because the script is a program the command will execute and it resolves inside a root
+
 ### Requirement: The shipped default command set is enumerated and bounded
 
 The system SHALL ship a default set containing only commands satisfying the admission test above, and SHALL document, for each, the bounded grammar under which it holds. The default set SHALL be exactly: `ls`, `pwd`, `echo`, `cat`, `head`, `tail`, `wc`, and `grep` — each restricted to an allowlist of flags that select or format output and never write, execute, or read configuration. Every default command SHALL resolve from a default program directory, so that a fresh installation can run what it advertises.
 
-`rg` is deliberately excluded despite being the better search tool: it installs outside the system program directories, and admitting the directory it lives in would make a user-writable location a source of programs.
+`rg` is deliberately excluded despite being the better search tool: it installs outside the system program directories, admitting the directory it lives in would make a user-writable location a source of programs, and it carries three independent execution channels (`--pre`, `--hostname-bin`, `-z`).
+
+The permitted flags SHALL be exactly:
+
+| Command | Permitted flags |
+|---|---|
+| `ls` | `-l`, `-a`, `-h`, `-t`, `-r`, `-1` |
+| `pwd` | *(none)* |
+| `echo` | `-n` |
+| `cat` | `-n`, `-b`, `-s` |
+| `head` | `-n <count>`, `-c <bytes>` |
+| `tail` | `-n <count>`, `-c <bytes>` |
+| `wc` | `-l`, `-w`, `-c`, `-m` |
+| `grep` | `-i`, `-n`, `-v`, `-c`, `-l`, `-w`, `-x`, `-E`, `-F`, `-r`, `-A/-B/-C <count>` |
+
+`grep -R` and `grep -S` are **excluded**: both follow symbolic links during traversal and were verified reaching a file outside the configured root, while `-r` does not follow them. `grep -f` is excluded as a path the scope check would have to cover for no benefit. No permitted flag on any command writes a file, executes a program, or names a configuration source.
+
+#### Scenario: A link-following recursion flag is refused
+
+- **WHEN** a request runs `grep -R` or `grep -S` over a configured root
+- **THEN** the request is refused, because neither appears in the allowlist
 
 `find`, `git`, `rm`, and every command interpreter SHALL be absent from the default set. A human MAY add any of them by explicit configuration.
 
@@ -73,7 +122,8 @@ The system SHALL ship a default set containing only commands satisfying the admi
 #### Scenario: Every default command carries a stated grammar
 
 - **WHEN** the default set is inspected
-- **THEN** each command carries a flag allowlist under which it cannot execute another program, cannot write any path, and cannot read configuration from its environment
+- **THEN** each command carries a flag allowlist under which it cannot execute another program and cannot write any path
+- **AND** its inability to read configuration from the environment comes from the constructed environment rather than from the flag allowlist, since no flag list can deliver that property
 
 #### Scenario: Every default command resolves from a default program directory
 
@@ -123,7 +173,7 @@ For `execute_command`, the system SHALL classify every request by **effect** (`r
 
 The system SHALL expose `execute_external_command` as the sole means of operating outside the configured roots. Requests through it SHALL be subject to program authorization, the argument allowlist, the constructed environment, and the command's permission.
 
-A command's permission SHALL be a function of **both the command and the scope**: reaching outside the configured roots SHALL default to `ask`, independently of that command's confined permission, so that the server retains a decision rather than delegating the whole boundary to the host's per-tool setting. Where the client is not interactive, `ask` denies.
+A command's permission SHALL be a function of **both the command and the scope**: reaching outside the configured roots SHALL resolve to `ask` at minimum, independently of that command's confined permission, so that the server retains a decision rather than delegating the whole boundary to the host's per-tool setting. Policy MAY raise this to `deny` but SHALL NOT lower it to `allow`. Where the client is not interactive, `ask` denies.
 
 #### Scenario: Out-of-root access is gated even for an otherwise-permitted command
 
