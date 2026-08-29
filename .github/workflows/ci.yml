@@ -65,3 +65,21 @@ jobs:
     
     - name: Run security audit
       run: npm audit --omit=dev
+
+  transport-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      # The dependency posture rests on this server being stdio-only: the SDK's
+      # express/hono stack is never instantiated, so its advisories are
+      # unreachable. If an HTTP or SSE transport is ever imported that argument
+      # silently stops holding, so fail loudly instead.
+      - name: Refuse HTTP/SSE transports
+        run: |
+          if grep -rnE "server/(streamableHttp|sse|express)\.js" src/; then
+            echo "::error::An HTTP/SSE transport was imported. This server is stdio-only;"
+            echo "::error::the dependency reachability argument in SECURITY.md no longer holds."
+            exit 1
+          fi
+          echo "stdio-only: confirmed"
