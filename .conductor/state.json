@@ -23,7 +23,16 @@
       ],
       "reconcileNeeded": false,
       "attributedCommits": [],
-      "startedAt": "2026-08-28T22:46:06.110Z"
+      "startedAt": "2026-08-28T22:46:06.110Z",
+      "gateReview": {
+        "gate1": {
+          "verdict": "pass",
+          "reviewedAt": "2026-08-29T06:50:59.646Z",
+          "baseSha": "d687520c0c4466cc28041865d33266b2648d5995",
+          "headSha": "d687520c0c4466cc28041865d33266b2648d5995",
+          "reviewer": "cross-spec review R1-R7, 2 fresh-context lenses each; spec artifacts at d687520c0c4466cc28041865d33266b2648d5995"
+        }
+      }
     },
     {
       "id": "npm-name-dispute",
@@ -112,7 +121,7 @@
     }
   ],
   "detourStack": [],
-  "revision": 29,
+  "revision": 30,
   "archiveBackfilledAt": "2026-08-28T22:45:37.558Z",
   "pmVersion": "0.30.0",
   "platform": "claude-code"
