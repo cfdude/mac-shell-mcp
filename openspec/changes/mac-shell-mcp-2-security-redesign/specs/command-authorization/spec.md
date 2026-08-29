@@ -8,17 +8,19 @@ Decides whether a requested program may run with the requested arguments, by adm
 
 The system SHALL admit a command only where policy declares an **allowlist** of the argument shapes it accepts, and SHALL refuse any argument not matching that allowlist. The system SHALL NOT rely on denylists of forbidden arguments.
 
-A command qualifies for the shipped default set only where a bounded grammar can be stated under which it **cannot name another program or script for execution, and cannot reach a path the system did not scope-check**. Anything failing that test SHALL be absent from the default set and admitted only by explicit human configuration.
+A command qualifies for the shipped default set only where a bounded grammar can be stated under which it **cannot name another program or script for execution, cannot write to or create any path, and cannot reach a path the system did not scope-check**. Anything failing that test SHALL be absent from the default set and admitted only by explicit human configuration.
+
+A command's declared effect is a **label, not a guarantee**. Where a command offers any facility that writes — regardless of the effect it is declared under — it fails this test. `find` fails it: `-fprintf` and `-fls` write attacker-chosen content to an attacker-chosen path while `find` is naturally declared `read`.
 
 #### Scenario: An argument outside the allowlist is refused
 
 - **WHEN** a request supplies an argument matching no permitted pattern for that command
 - **THEN** the request is refused, and the refusal names the permitted argument shapes
 
-#### Scenario: A newly discovered dangerous flag needs no rule
+#### Scenario: A flag absent from the allowlist is refused with no rule naming it
 
-- **WHEN** a command gains a flag that would let it execute another program
-- **THEN** requests using that flag are already refused, because it appears in no allowlist
+- **WHEN** a request supplies a flag that would let a command execute another program, and that flag appears in no allowlist for that command
+- **THEN** the request is refused without any rule having to name that flag
 
 #### Scenario: Position does not constrain matching
 
@@ -49,28 +51,41 @@ The system SHALL resolve the requested command to an absolute program path using
 - **WHEN** a request names a command for which policy declares no effect
 - **THEN** the request is refused rather than defaulting to any effect
 
-### Requirement: `git` runs read-only in a controlled environment
+### Requirement: The shipped default command set is enumerated and bounded
 
-Where policy permits `git`, the system SHALL restrict it to an allowlist of read-only subcommands and SHALL execute it in an environment that structurally disables configuration, alias, pager and hook execution — neutralising system, global and repository-directory configuration, forcing a non-interactive pager, and disabling terminal prompting. The subcommand and flag allowlists SHALL be the only permitted arguments.
+The system SHALL ship a default set containing only commands satisfying the admission test above, and SHALL document, for each, the bounded grammar under which it holds. The default set SHALL be exactly: `ls`, `pwd`, `echo`, `cat`, `head`, `tail`, `wc`, `grep`, and `rg` — each restricted to an allowlist of flags that select or format output and never write, execute, or read configuration.
 
-#### Scenario: Repository-directory redirection is refused
+`find`, `git`, `rm`, and every command interpreter SHALL be absent from the default set. A human MAY add any of them by explicit configuration.
 
-- **WHEN** a request supplies `--git-dir`, `--work-tree`, `-C`, `-c`, `--exec-path`, or `--config-env`
-- **THEN** the request is refused, because none appears in the flag allowlist
+#### Scenario: A write-capable command is absent by default
 
-#### Scenario: An alias planted in a reachable repository does not execute
+- **WHEN** a fresh installation's effective policy is inspected
+- **THEN** `find` is absent, because `-fprintf` writes attacker-chosen content to an attacker-chosen path while `find` is declared `read`
+- **AND** `git` is absent, because local repository configuration executes commands and no environment setting disables it
 
-- **WHEN** a repository reachable by the request declares an alias whose value invokes a shell
-- **THEN** the alias does not execute, because configuration is neutralised by the environment rather than by enumerating the flags that reach it
+#### Scenario: Every default command carries a stated grammar
 
-#### Scenario: Only read-only subcommands run
+- **WHEN** the default set is inspected
+- **THEN** each command carries a flag allowlist under which it cannot execute another program, cannot write any path, and cannot read configuration from its environment
 
-- **WHEN** a request invokes a `git` subcommand outside the permitted read-only set
-- **THEN** the request is refused
+### Requirement: The child environment is constructed, never inherited
+
+The system SHALL construct the environment of every executed command from an allowlist, and SHALL NOT pass the server's own environment through. Variables by which a command loads configuration, selects a helper program, or alters its search path SHALL be absent unless explicitly allowlisted.
+
+#### Scenario: A configuration variable cannot smuggle in a helper program
+
+- **WHEN** a request runs `rg` and the server's environment contains `RIPGREP_CONFIG_PATH` pointing at a file that specifies a pre-processor command
+- **THEN** the command runs without that variable, because the child environment is built from an allowlist
+- **AND** no argument allowlist could have caught this, since the variable never appears in the argument vector
+
+#### Scenario: Search-path variables are not inherited
+
+- **WHEN** any command is executed
+- **THEN** the child receives no inherited `PATH`, and program resolution does not consult one
 
 ### Requirement: Confined authorization is computed from effect and scope
 
-For `execute_command` and `execute_pipeline`, the system SHALL classify every request by **effect** (`read` or `write`) crossed with **scope** — whether every path-shaped argument resolves inside a configured root — and SHALL then apply the command's configured permission of `allow`, `ask`, or `deny`. A request reaching outside the configured roots SHALL be refused by these tools.
+For `execute_command`, the system SHALL classify every request by **effect** (`read` or `write`) crossed with **scope** — whether every path-shaped argument resolves inside a configured root — and SHALL then apply the command's configured permission of `allow`, `ask`, or `deny`. A request reaching outside the configured roots SHALL be refused by this tool. `execute_pipeline` is confined identically but restricted further to read-effect stages, as specified in the command-execution capability.
 
 #### Scenario: Read inside a configured root is permitted
 
@@ -94,11 +109,19 @@ For `execute_command` and `execute_pipeline`, the system SHALL classify every re
 
 ### Requirement: Out-of-root work is reachable only through the external tool
 
-The system SHALL expose `execute_external_command` as the sole means of operating outside the configured roots. Requests through it SHALL be subject to program authorization, the argument allowlist, and the command's permission, and SHALL be refused only where one of those refuses them — never merely for being out of scope.
+The system SHALL expose `execute_external_command` as the sole means of operating outside the configured roots. Requests through it SHALL be subject to program authorization, the argument allowlist, the constructed environment, and the command's permission.
 
-#### Scenario: The external tool executes when policy permits
+A command's permission SHALL be a function of **both the command and the scope**: reaching outside the configured roots SHALL default to `ask`, independently of that command's confined permission, so that the server retains a decision rather than delegating the whole boundary to the host's per-tool setting. Where the client is not interactive, `ask` denies.
 
-- **WHEN** `execute_external_command` is called with a permitted command whose arguments resolve outside the configured roots, and that command's permission is `allow`
+#### Scenario: Out-of-root access is gated even for an otherwise-permitted command
+
+- **WHEN** `execute_external_command` is called with `cat` against a path outside every configured root, and `cat`'s confined permission is `allow`
+- **THEN** the out-of-root permission of `ask` applies rather than `allow`
+- **AND** the request is refused where the client is not interactive
+
+#### Scenario: The external tool executes when the out-of-root permission permits
+
+- **WHEN** `execute_external_command` is called with a permitted command outside the roots and the out-of-root permission resolves to allow
 - **THEN** the command executes and its result is returned
 
 #### Scenario: The external tool still enforces every other rule
@@ -152,7 +175,7 @@ The system SHALL NOT expose any tool that adds, removes, or re-classifies a comm
 #### Scenario: Policy-mutating tools are absent from the tool list
 
 - **WHEN** a client lists the available tools
-- **THEN** `add_to_whitelist`, `update_security_level`, `remove_from_whitelist`, `approve_command`, `deny_command`, and `get_pending_commands` are all absent
+- **THEN** `add_to_whitelist`, `update_security_level`, `remove_from_whitelist`, `approve_command`, `deny_command`, `get_pending_commands`, and `get_whitelist` are all absent
 
 #### Scenario: A denied command cannot be promoted
 

@@ -22,9 +22,17 @@ context: |
     argument shapes. A denylist is a list of what someone thought of; it was
     tried and defeated by `git -c alias`, `git --git-dir`, and `awk system()`.
   - A command belongs in the default set only if a bounded grammar can be stated
-    under which it cannot name another program or script, and cannot reach a
-    path the system did not scope-check. Anything else needs explicit human
-    configuration.
+    under which it cannot name another program or script, CANNOT WRITE OR CREATE
+    any path, and cannot reach a path the system did not scope-check. The
+    declared effect is a LABEL, NOT A GUARANTEE -- `find` is declared read and
+    `-fprintf` writes attacker-chosen content anywhere. Protection therefore
+    keys on the OPERATION a request performs, never on the label.
+  - The default set is exactly: ls pwd echo cat head tail wc grep rg.
+    `find`, `git`, `rm` and every interpreter are ABSENT -- addable only by
+    explicit human configuration. git executes commands from local .git/config
+    and no env var disables it.
+  - The child environment is CONSTRUCTED from an allowlist, never inherited --
+    RIPGREP_CONFIG_PATH proved an argv-only allowlist cannot see it.
   - Authorization authorizes the PROGRAM as well as the arguments: resolve to an
     absolute path (case-corrected, symlinks followed) BEFORE the policy match,
     match by resolved path not basename, and refuse any program resolving inside

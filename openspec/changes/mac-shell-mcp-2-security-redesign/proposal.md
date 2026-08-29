@@ -22,7 +22,7 @@ This is a published npm package with a `bin`, so existing installs are exposed u
 
 ## What Changes
 
-- **BREAKING** — remove `add_to_whitelist`, `update_security_level`, `remove_from_whitelist`, `approve_command`, `deny_command`, `get_pending_commands`. No MCP tool mutates policy; these are absent, not gated. This also disposes of a promise in `queueCommandForApproval` that never times out, and an `approveCommand` path that re-executes without re-validating.
+- **BREAKING** — remove **seven** tools: `add_to_whitelist`, `update_security_level`, `remove_from_whitelist`, `approve_command`, `deny_command`, `get_pending_commands`, and `get_whitelist` (superseded by `get_policy`, which reports a policy object the old tool's shape no longer describes). No MCP tool mutates policy; these are absent, not gated. This also disposes of a promise in `queueCommandForApproval` that never times out, and an `approveCommand` path that re-executes without re-validating.
 - **BREAKING** — `execFile` is never called with the `shell` option. Argument content stops being dangerous once argv reaches `execve` unmodified, so no metacharacter sanitizing is added (and the blocklist recommended by the current on-disk `SECURITY_REVIEW.md` is explicitly rejected — it breaks `My File (2).txt` and every glob while remaining evadable).
 - **BREAKING** — authorization admits only commands with a **bounded argument allowlist**, and authorizes the **program** as well as the arguments: resolved to an absolute path, matched by that path rather than basename, drawn only from configured program directories, and refused if it resolves inside a root. Denylists are abandoned — two review rounds defeated them with `git -c alias`, `git --git-dir`, and `awk system()`, each verified executing arbitrary shell.
 - **BREAKING** — tools split by confinement so a host's never/always/ask setting is meaningful: `execute_command` (inside roots) and `execute_external_command` (outside roots, or deleting), plus `execute_pipeline`, `get_policy`, `suggest_policy_config`. All carry MCP tool annotations, currently unset.
@@ -38,7 +38,7 @@ This is a published npm package with a `bin`, so existing installs are exposed u
 
 ### New Capabilities
 
-- `command-authorization`: program authorization (resolved path, program directories, no programs inside roots), bounded per-command **argument allowlists**, the effect × scope decision for confined tools, the external tool as the sole out-of-root route, environment-controlled read-only `git`, path-shape detection and root confinement, and the tool annotations.
+- `command-authorization`: program authorization (resolved path, program directories, no programs inside roots), bounded per-command **argument allowlists**, the effect × scope decision for confined tools, the external tool as the sole out-of-root route, an enumerated default command set that excludes `find`, `git` and every interpreter, a child environment constructed from an allowlist rather than inherited, path-shape detection and root confinement, and the tool annotations.
 - `command-execution`: shell-free execution, structured results carrying exit codes, output caps and truncation, `cwd`/`stdin`/opt-in globs, and in-process pipelines.
 - `policy-configuration`: config discovery order and precedence, schema, config self-protection, `ask`→`deny` degradation without an interactive client, first-run posture, and the MCPB `user_config` mapping.
 - `audit-and-suggestion`: the append-only audit log and `suggest_policy_config`.

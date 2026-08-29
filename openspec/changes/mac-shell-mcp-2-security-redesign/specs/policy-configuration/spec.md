@@ -54,7 +54,7 @@ The system SHALL read policy once at startup and SHALL NOT re-read or modify it 
 
 ### Requirement: The server cannot modify its own policy, program directories, or audit trail
 
-The system SHALL refuse every write-effect command whose resolved target is, or lies within:
+The system SHALL refuse every request that **would write to, create, replace, or remove** any protected location — judged by the operation the request performs, **not by the command's declared effect**, since a command declared `read` may still offer a facility that writes. Protected locations are, or lie within:
 
 - any path in the policy discovery order — not only the active one — or **any ancestor directory** of such a path;
 - any configured **program directory**, or any entry within it;
@@ -63,6 +63,11 @@ The system SHALL refuse every write-effect command whose resolved target is, or 
 This SHALL hold regardless of configured roots, regardless of the command's permissions, and regardless of any exemption expressed in policy itself.
 
 Protected locations SHALL be identified by **filesystem identity — device and inode — captured at startup**, and additionally by path, so that a location holding no file at startup is still protected from having one created. The system SHALL refuse any request creating a hard or symbolic link where either operand resolves to a protected location, and SHALL refuse renaming or removing any protected ancestor directory. Reading a policy file SHALL remain permitted.
+
+#### Scenario: A read-declared command with a write facility is still refused
+
+- **WHEN** a command whose declared effect is `read` is asked to write to a protected location through a facility such as an output-file flag
+- **THEN** the request is refused, because protection keys on the operation rather than the declared effect
 
 #### Scenario: Program directories cannot be written
 
@@ -79,10 +84,10 @@ Protected locations SHALL be identified by **filesystem identity — device and 
 - **WHEN** a request runs `chmod` against the active policy file
 - **THEN** the request is refused, even if `chmod` is otherwise permitted and the file lies inside a configured root
 
-#### Scenario: Deleting the policy file is refused
+#### Scenario: Removing the policy file is refused
 
-- **WHEN** a request runs a delete-effect command against the active policy file
-- **THEN** the request is refused, because protection covers delete as well as write
+- **WHEN** a request would remove or replace the active policy file by any means
+- **THEN** the request is refused, because protection covers the operation rather than the command's label
 
 #### Scenario: The policy file cannot be replaced
 
@@ -121,7 +126,7 @@ Protected locations SHALL be identified by **filesystem identity — device and 
 
 ### Requirement: Policy declares roots, programs, commands, effects, argument allowlists, tools, and permissions
 
-The system SHALL accept: configured roots; the program directories from which commands may be resolved; permitted commands, each carrying its **effect** and its **allowlist of permitted argument shapes**; denied commands; enabled tools; and a per-command permission of `allow`, `ask`, or `deny`.
+The system SHALL accept: configured roots; the program directories from which commands may be resolved; permitted commands, each carrying its **effect** (`read` or `write` — there is no delete effect in this release) and its **allowlist of permitted argument shapes**; denied commands; enabled tools; and a per-command permission of `allow`, `ask`, or `deny`.
 
 A command declaring no argument allowlist SHALL accept no arguments. A denied command SHALL remain denied even if also listed as permitted. A tool that is not enabled SHALL NOT be offered, except the policy-reporting tool, which is always available.
 
@@ -166,7 +171,7 @@ The system SHALL treat a client as interactive **only** where it declares the MC
 
 ### Requirement: A fresh installation is safe and self-explanatory
 
-The system SHALL default to a read-only command set and no configured roots, so that every request is refused until a human configures roots. Each refusal SHALL name the permitted commands and state where configuration is supplied.
+The system SHALL default to the enumerated read-only command set, to program directories of `/usr/bin`, `/bin`, `/usr/sbin` and `/sbin`, and to **no configured roots**, so that every request is refused until a human configures roots. Program directories SHALL have a working default, since a command set that resolves no programs cannot run at all. Each refusal SHALL name the permitted commands and state where configuration is supplied.
 
 #### Scenario: An unconfigured install refuses but teaches
 

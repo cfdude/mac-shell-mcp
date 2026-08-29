@@ -56,21 +56,6 @@ The effect × scope model as first written authorized *arguments* and never the 
 
 Programs are therefore resolved to an absolute path, matched **by resolved path rather than basename**, resolved only from configured program directories, and refused outright when they resolve inside a configured root. Roots hold data; they are never a source of code. A command carrying no declared effect denies rather than defaulting.
 
-### Deny exec-capable commands as a class, not by enumeration
-
-The first draft denied `find -exec` and destructive `git` subcommands and considered the problem handled. It is not enumerable. Verified live during review:
-
-```
-git -c alias.pwn='!echo OWNED; id -un' pwn     → executes arbitrary shell
-awk 'BEGIN{system("id -un")}'                  → awk supplies its own shell
-```
-
-Neither carries a path-shaped argument; both are read-effect and fully confined. `perl -e`, `python -c`, `osascript -e`, `tar --use-compress-program=`, `rsync -e`, `xargs`, `env` and `sed -i` are the same shape, and any list of them is a list of the ones someone happened to think of.
-
-So the rule is a **class**: a command that can spawn a process, evaluate code, or invoke a shell is denied unless policy names it explicitly. The per-command argument rules remain, but they are now a second layer over commands already permitted, and the documentation states plainly that they cover only the commands they name.
-
-`git` additionally loses `-c`, `--exec-path`, `-C` and configuration-writing subcommands, and its destructive-subcommand rule becomes order- and spelling-insensitive — `git clean -xdf` was accepted by the first draft's literal `-fdx` denial. `git gc --prune=now` and `git reflog expire` are denied too, because the delete-safety recoverability report would otherwise confidently report content that had just been destroyed.
-
 ### Protect by filesystem identity, and protect every discovery location
 
 Path-string comparison fails three ways, two verified on this machine:
@@ -79,7 +64,9 @@ Path-string comparison fails three ways, two verified on this machine:
 - **Hard links.** `ln <config> <root>/cfg` makes the config reachable at an unprotected path, and writing through the link truncates the original inode.
 - **Shadowing.** Protection covering only the *active* policy file lets the agent write a config into a working directory, which — being higher in the discovery order — wins outright on the next start. That is CWE-862 deferred by one restart.
 
-Protection therefore compares `(st_dev, st_ino)`, covers **every** path in the discovery order plus the audit log, refuses link creation where either operand resolves to a protected inode, and extends to delete-effect commands as well as write — the first draft said "write-effect", while the model defines `delete` as a *separate* effect, so `rm <config>` escaped the guard the task list claimed to test.
+Protection therefore compares `(st_dev, st_ino)` captured at startup and also matches by path, covers **every** path in the discovery order plus their ancestors, the program directories, and the whole audit log directory, and refuses link creation where either operand resolves to a protected location.
+
+Crucially it is judged by **the operation a request performs, not the command's declared effect**. An earlier draft keyed on "write-effect command", which `find -fprintf` — declared `read`, and an arbitrary-content write — walked straight through.
 
 A change in which source supplies policy is reported at startup and not adopted unattended.
 
@@ -115,12 +102,6 @@ A policy file that exempts its own path is ignored, because a self-referential e
 
 *Alternative rejected — degrading to `allow`*, which would convert the most cautious setting into the least safe one in exactly the environment with the least oversight.
 
-### Git state supplies recoverability, and `git` is therefore constrained
-
-Deletion consults version-control state to report whether the target is genuinely recoverable. The subtle case is an **ignored file inside a repository**: it looks protected by being in a repo and is not.
-
-Because this model relies on `git` as the recovery mechanism, `git` is permitted — but its destructive subcommands are denied (`clean -fdx`, `reset --hard`, `push --force`, `checkout -- .`). Without that, the deletion safeguards have a bypass sitting immediately beside them.
-
 ### Suggestion without application
 
 `suggest_policy_config` reads the audit log and emits config in both forms. It cannot apply its own suggestion — the self-protection rule forbids writing the policy file.
@@ -144,15 +125,27 @@ realpathSync('./CFG.JSON') !== realpath           → case defeats a path-string
 
 The blocks were not converging: all eight round-2 coherence blocks traced to round-1 fixes, at roughly one new defect per fix. The cause was scope, not care. Every finding belonged to one of three unbounded families — a command doing more than its declared effect, a protected thing reachable by an unanticipated identity, and a confirmation with no trustworthy carrier — and the first family is fatal to a denylist model. `python <script inside a root>` is confined, read-effect, path-clean, and full code execution with every rule satisfied.
 
-So the model inverts. Every command carries an **allowlist** of argument shapes, and a command earns a place in the shipped default set only where a bounded grammar can be stated under which it cannot name another program or script, and cannot reach an unchecked path. That test is the whole rule; the "exec-capable class" it replaced was unprovable — and, as written, vacuous, since only policy-named commands ever reached it.
+So the model inverts. Every command carries an **allowlist** of argument shapes, and a command earns a place in the shipped default set only where a bounded grammar can be stated under which it cannot name another program or script, **cannot write or create any path**, and cannot reach an unchecked path. The write clause was added after `find -fprintf` defeated the first version of this test.
+
+That test is the whole rule. The "exec-capable class" it replaced was unprovable — and, as written, vacuous, since only policy-named commands ever reached the check that excused policy-named commands.
 
 *Alternative rejected — enumerate the dangerous flags.* That is what rounds 1 and 2 did. A denylist is a list of what someone thought of, and `--git-dir` was not on it.
 
-### `git` keeps its place by controlling the environment, not the flags
+### `git` and `find` are absent from the default set
 
-`git` is the recovery mechanism and is worth keeping. But its danger is configuration, not any particular flag: aliases, pagers and hooks all execute, and `-c`, `--git-dir`, `--work-tree`, `--exec-path`, `--config-env` and `config --file` all reach them.
+Both were kept through two revisions and both failed the admission test, verified live:
 
-The server therefore controls the child environment — neutralising system, global and repository-directory configuration, forcing a non-interactive pager, disabling terminal prompting — and permits only read-only subcommands with allowlisted flags. That closes the family structurally rather than one flag at a time.
+```
+find . -maxdepth 0 -fprintf <path> '<content>'   → arbitrary path, arbitrary content, declared `read`
+GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+  GIT_PAGER=cat git --no-pager diff              → local .git/config diff.external executed `id`
+```
+
+`find` is a write primitive wearing a read label, which is what made every effect-keyed protection miss it. `git` executes commands from **local repository configuration**, and no environment variable disables `$GIT_DIR/config` — so the environment-control design drafted for it was never implementable.
+
+`git`'s justification also expired: it was in the set to support the delete recoverability ladder, and delete was cut. Nothing in 2.0 needed it any more.
+
+*Alternative rejected — command-level config overrides* (`GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n` blanking `diff.external`, `core.fsmonitor`, `diff.*.textconv`, `filter.*.clean`). It would probably work, and it is another enumeration of the channels we currently know about — the pattern that failed three times. A human who wants `git` can add it deliberately.
 
 ### Delete deferred rather than weakened
 
@@ -167,7 +160,7 @@ Interactivity was to be inferred from declared client capabilities. Of the three
 ## Risks / Trade-offs
 
 - **Path detection is heuristic** → fails closed to out-of-scope; documented in `SECURITY.md` as a known limit rather than hidden. Attached flag values (`--output=/etc/x`, `-o/etc/x`) are split and scope-checked, because a value fused to a flag is never "not a flag" and so never reached the heuristic at all.
-- **The exec-capable class is a judgement, not a proof** → a command nobody classified as exec-capable, that turns out to be, defeats it. Mitigated by denying the class by default rather than permitting by default, and by stating the limit in `SECURITY.md` instead of implying completeness.
+- **The admission test is a judgement, not a proof** → a default-set command with a facility nobody noticed defeats it, exactly as `find -fprintf` did. Mitigated by keeping the default set small enough to audit by hand, constructing the child environment rather than inheriting it, keying protection on operations rather than labels, and stating the limit in `SECURITY.md` rather than implying completeness.
 - **TOCTOU between resolution and execution** → the agent can race its own concurrent calls, swapping a symlink between the scope check and the exec. Distinct from the another-process non-goal above. Mitigated by resolving once and executing against the resolved path.
 - **Over-prompting degrades into always-allow** — a human who is asked too often will disable the gate → mitigated by making the confined tier genuinely useful (reads and writes inside roots are free) so `ask` is rare in normal work, and by `suggest_policy_config` turning observed usage into config.
 - **The policy file is a single point of trust** → self-protection stops *this server* writing it and `chmod 444` raises the bar for everything else, but a separate process running as the same user can still rewrite it. Inherent to file-based config; stated in the specs' non-goals rather than papered over.
