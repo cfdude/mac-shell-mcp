@@ -325,3 +325,30 @@ describe('working directory', () => {
     expect(r.stdout.trim()).toBe(realpathSync.native(root));
   });
 });
+
+describe('release hygiene', () => {
+  test('every version string agrees', async () => {
+    const { readFileSync } = await import('node:fs');
+    const read = (p) => JSON.parse(readFileSync(new URL(p, import.meta.url), 'utf8')).version;
+    const pkg = read('../package.json');
+    expect(read('../smithery.json')).toBe(pkg);
+    expect(read('../manifest.json')).toBe(pkg);
+    const src = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
+    expect(src).toContain(`const VERSION = '${pkg}'`);
+  });
+
+  test('the server is stdio-only, which is what makes the SDK HTTP advisories unreachable', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
+    expect(src).not.toMatch(/server\/(streamableHttp|sse|express)\.js/);
+  });
+
+  test('the sample config parses through the real loader', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { PolicyFile } = await import('../build/policy.js');
+    const raw = JSON.parse(
+      readFileSync(new URL('../.mac-shell-mcp.sample.json', import.meta.url), 'utf8'),
+    );
+    expect(PolicyFile.safeParse(raw).success).toBe(true);
+  });
+});
