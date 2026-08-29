@@ -81,11 +81,11 @@ The system SHALL accept a working directory, a text value supplied to the comman
 
 ### Requirement: Pipelines run in process and authorize every stage
 
-The system SHALL support composing commands by connecting each stage's standard output to the next stage's standard input, without a shell. Every stage SHALL be authorized independently and completely — program authorization, effect, scope confinement, per-command argument rules, and permission — exactly as the confined tool authorizes a single call. The pipeline SHALL be restricted to read-effect commands **and** to arguments resolving inside the configured roots.
+The system SHALL support composing commands by connecting each stage's standard output to the next stage's standard input, without a shell. Every stage SHALL be authorized independently and completely — program authorization, effect, scope confinement, argument allowlist, and permission. The pipeline SHALL additionally be restricted to **read-effect** commands and to arguments resolving inside the configured roots, which is stricter than `execute_command`, since that tool also permits in-root writes.
 
 #### Scenario: A later stage cannot inherit an earlier stage's acceptability
 
-- **WHEN** a pipeline requests a permitted read command followed by a delete command
+- **WHEN** a pipeline requests a permitted read command followed by a write-effect command
 - **THEN** the pipeline is refused
 - **AND** no stage executes
 

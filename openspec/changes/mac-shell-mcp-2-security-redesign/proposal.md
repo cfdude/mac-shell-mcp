@@ -24,11 +24,11 @@ This is a published npm package with a `bin`, so existing installs are exposed u
 
 - **BREAKING** — remove `add_to_whitelist`, `update_security_level`, `remove_from_whitelist`, `approve_command`, `deny_command`, `get_pending_commands`. No MCP tool mutates policy; these are absent, not gated. This also disposes of a promise in `queueCommandForApproval` that never times out, and an `approveCommand` path that re-executes without re-validating.
 - **BREAKING** — `execFile` is never called with the `shell` option. Argument content stops being dangerous once argv reaches `execve` unmodified, so no metacharacter sanitizing is added (and the blocklist recommended by the current on-disk `SECURITY_REVIEW.md` is explicitly rejected — it breaks `My File (2).txt` and every glob while remaining evadable).
-- **BREAKING** — authorization becomes **effect × scope**, computed per call: a static per-command effect (`read`/`write`/`delete`) crossed with where the `realpath`-resolved arguments land relative to configured roots.
+- **BREAKING** — authorization admits only commands with a **bounded argument allowlist**, and authorizes the **program** as well as the arguments: resolved to an absolute path, matched by that path rather than basename, drawn only from configured program directories, and refused if it resolves inside a root. Denylists are abandoned — two review rounds defeated them with `git -c alias`, `git --git-dir`, and `awk system()`, each verified executing arbitrary shell.
 - **BREAKING** — tools split by confinement so a host's never/always/ask setting is meaningful: `execute_command` (inside roots) and `execute_external_command` (outside roots, or deleting), plus `execute_pipeline`, `get_policy`, `suggest_policy_config`. All carry MCP tool annotations, currently unset.
 - Canonical **config file** with a documented discovery order, superseding the MCPB manifest as the configuration model so Smithery, Docker, Claude Code and custom hosts are configurable at all.
 - **Hard-coded self-protection**: the server cannot modify its own config file or that file's parent directory, non-overridable from config.
-- **Git-aware delete safety** — an `rm` recoverability ladder plus structural rules that deny `-rf` outright.
+- **No delete capability in 2.0.** `rm` is `FORBIDDEN` in 1.x, so this is zero regression. The git-aware recoverability ladder is written and deferred to `openspec/deferred/delete-safety-2.1.md`: a delete needs a human to see what will be destroyed, and MCP offers no channel that carries that report to a human today — the host's prompt renders only the tool name and the arguments the *model* chose.
 - **Audit log** and `suggest_policy_config`, which reads it and proposes config the human applies.
 - Result correctness: exit codes preserved (a `grep` no-match currently surfaces as a crash), explicit output cap with graceful truncation, structured output, plus `cwd`, `stdin` and opt-in glob expansion.
 - Dependency updates including `@modelcontextprotocol/sdk` 1.30, `zod` 4, `eslint` 10, `jest` 30. TypeScript goes to **6.0.3, not 7.x** — verified that `@typescript-eslint/parser` declares `typescript: ">=4.8.4 <6.1.0"`, so 7 breaks lint.
@@ -38,10 +38,9 @@ This is a published npm package with a `bin`, so existing installs are exposed u
 
 ### New Capabilities
 
-- `command-authorization`: the effect × scope decision, the tool surface and its annotations, path-shape detection and root confinement, and per-command argument rules (`find -exec`, the destructive `git` subcommand denylist, `allowedArgs` set semantics).
+- `command-authorization`: program authorization (resolved path, program directories, no programs inside roots), bounded per-command **argument allowlists**, the effect × scope decision for confined tools, the external tool as the sole out-of-root route, environment-controlled read-only `git`, path-shape detection and root confinement, and the tool annotations.
 - `command-execution`: shell-free execution, structured results carrying exit codes, output caps and truncation, `cwd`/`stdin`/opt-in globs, and in-process pipelines.
 - `policy-configuration`: config discovery order and precedence, schema, config self-protection, `ask`→`deny` degradation without an interactive client, first-run posture, and the MCPB `user_config` mapping.
-- `delete-safety`: `rm` structural rules and the git recoverability ladder.
 - `audit-and-suggestion`: the append-only audit log and `suggest_policy_config`.
 
 ### Modified Capabilities

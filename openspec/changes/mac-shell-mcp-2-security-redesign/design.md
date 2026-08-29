@@ -131,6 +131,39 @@ Because this model relies on `git` as the recovery mechanism, `git` is permitted
 
 `@typescript-eslint/parser` declares `typescript: ">=4.8.4 <6.1.0"`, so TypeScript 7 breaks `npm run lint`, and the completion bar requires a green tree without `--no-verify`. `ts-jest`'s `<7` constraint does not apply — it is not a dependency, since Jest runs against compiled output. 6.0.3 takes the major bump while keeping lint working.
 
+### Allowlists, and a default set small enough to prove
+
+Two adversarial review rounds returned 32 blocks and four exploits verified live on the maintainer's machine:
+
+```
+git -c alias.pwn='!echo OWNED; id -un' pwn        → arbitrary shell
+git --git-dir=<in-root bare repo> pwn             → arbitrary shell
+awk 'BEGIN{system("id -un")}'                     → awk supplies its own shell
+realpathSync('./CFG.JSON') !== realpath           → case defeats a path-string guard
+```
+
+The blocks were not converging: all eight round-2 coherence blocks traced to round-1 fixes, at roughly one new defect per fix. The cause was scope, not care. Every finding belonged to one of three unbounded families — a command doing more than its declared effect, a protected thing reachable by an unanticipated identity, and a confirmation with no trustworthy carrier — and the first family is fatal to a denylist model. `python <script inside a root>` is confined, read-effect, path-clean, and full code execution with every rule satisfied.
+
+So the model inverts. Every command carries an **allowlist** of argument shapes, and a command earns a place in the shipped default set only where a bounded grammar can be stated under which it cannot name another program or script, and cannot reach an unchecked path. That test is the whole rule; the "exec-capable class" it replaced was unprovable — and, as written, vacuous, since only policy-named commands ever reached it.
+
+*Alternative rejected — enumerate the dangerous flags.* That is what rounds 1 and 2 did. A denylist is a list of what someone thought of, and `--git-dir` was not on it.
+
+### `git` keeps its place by controlling the environment, not the flags
+
+`git` is the recovery mechanism and is worth keeping. But its danger is configuration, not any particular flag: aliases, pagers and hooks all execute, and `-c`, `--git-dir`, `--work-tree`, `--exec-path`, `--config-env` and `config --file` all reach them.
+
+The server therefore controls the child environment — neutralising system, global and repository-directory configuration, forcing a non-interactive pager, disabling terminal prompting — and permits only read-only subcommands with allowlisted flags. That closes the family structurally rather than one flag at a time.
+
+### Delete deferred rather than weakened
+
+A delete needs a human to see what will be destroyed. Three candidate carriers, all rejected: an approval queue is the CWE-862 defect under a new name; a `confirm` parameter is one the agent sets itself; and the host's approval prompt renders the tool name and **the arguments the model chose**, so a report returned to the model never reaches a human.
+
+Since `rm` is `FORBIDDEN` in 1.x, shipping no delete is zero regression, and it removes an entire capability plus most of the `.git` protection surface. The spec is preserved at `openspec/deferred/delete-safety-2.1.md`, to revisit when the host supports MCP `elicitation`.
+
+### `elicitation` is the only capability that means a human
+
+Interactivity was to be inferred from declared client capabilities. Of the three MCP offers, `roots` and `elicitation` are absent on the flagship host and `sampling` asserts that **a model** will answer — so inferring interactivity from capabilities generally would route the human gate to another model. Only `elicitation` counts; everything else means `ask` denies.
+
 ## Risks / Trade-offs
 
 - **Path detection is heuristic** → fails closed to out-of-scope; documented in `SECURITY.md` as a known limit rather than hidden. Attached flag values (`--output=/etc/x`, `-o/etc/x`) are split and scope-checked, because a value fused to a flag is never "not a flag" and so never reached the heuristic at all.

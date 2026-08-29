@@ -26,12 +26,17 @@ The system SHALL locate its policy by checking, in order: an explicitly configur
 
 ### Requirement: A policy appearing at a new location is reported before it takes effect
 
-Because the discovery order prefers the working directory over the home directory, a file created inside a working directory would silently take precedence on the next start. The system SHALL record which source supplied policy on each run, and where the winning source differs from the previous run's, SHALL report the change at startup and refuse to start until the new source is acknowledged by configuration.
+Because the discovery order prefers the working directory over the home directory, a file created inside a working directory would silently take precedence on the next start. The system SHALL record, on each run, both which source supplied policy **and that source's filesystem identity**. Where either the winning source or its identity differs from the previously recorded run, the system SHALL report the change at startup and SHALL NOT adopt the new source until a human acknowledges it out of band. The record of the previous run SHALL itself be a protected location.
 
 #### Scenario: A newly appeared higher-precedence config does not silently win
 
 - **WHEN** policy was previously supplied by the home configuration file, and a config file now exists in the working directory
 - **THEN** startup reports that the winning source changed and does not adopt the new file unattended
+
+#### Scenario: Replacing the file at the same path is still detected
+
+- **WHEN** the winning source is at the same path as the previous run but its filesystem identity has changed
+- **THEN** the change is reported, because keying on the discovery slot alone would miss a replaced file
 
 #### Scenario: An unchanged source starts normally
 
@@ -47,11 +52,27 @@ The system SHALL read policy once at startup and SHALL NOT re-read or modify it 
 - **WHEN** the policy file is changed while the server is running
 - **THEN** the running server's decisions are unchanged until it is restarted
 
-### Requirement: The server cannot modify any policy location or its own audit log
+### Requirement: The server cannot modify its own policy, program directories, or audit trail
 
-The system SHALL refuse every **write-effect or delete-effect** command whose resolved target is any path in the policy discovery order — not only the active one — or the parent directory of any such path, or the active audit log. This SHALL hold regardless of configured roots, regardless of the command's permissions, and regardless of any exemption expressed in policy itself.
+The system SHALL refuse every write-effect command whose resolved target is, or lies within:
 
-Protected paths SHALL be identified by **filesystem identity — device and inode — rather than by path string**, and the system SHALL refuse any request creating a hard or symbolic link whose either operand resolves to a protected path. Reading a policy file SHALL remain permitted.
+- any path in the policy discovery order — not only the active one — or **any ancestor directory** of such a path;
+- any configured **program directory**, or any entry within it;
+- the **audit log directory** and every file in it, not only the currently active log file.
+
+This SHALL hold regardless of configured roots, regardless of the command's permissions, and regardless of any exemption expressed in policy itself.
+
+Protected locations SHALL be identified by **filesystem identity — device and inode — captured at startup**, and additionally by path, so that a location holding no file at startup is still protected from having one created. The system SHALL refuse any request creating a hard or symbolic link where either operand resolves to a protected location, and SHALL refuse renaming or removing any protected ancestor directory. Reading a policy file SHALL remain permitted.
+
+#### Scenario: Program directories cannot be written
+
+- **WHEN** a request writes or replaces a file inside a configured program directory
+- **THEN** the request is refused, because a program directory that the agent can write is a program the agent can author
+
+#### Scenario: An ancestor directory cannot be renamed out of the way
+
+- **WHEN** a request renames or removes a directory that contains a policy discovery location
+- **THEN** the request is refused, because recreating the path afterwards would yield a fresh, unprotected file
 
 #### Scenario: The server cannot unlock its own policy
 
@@ -83,10 +104,10 @@ Protected paths SHALL be identified by **filesystem identity — device and inod
 - **WHEN** a request writes a policy file into a configured working directory while policy is currently supplied by the home configuration file
 - **THEN** the request is refused, because every location in the discovery order is protected
 
-#### Scenario: The audit log cannot be rewritten or removed
+#### Scenario: The audit trail cannot be rewritten or removed
 
-- **WHEN** a request runs any write- or delete-effect command against the active audit log
-- **THEN** the request is refused
+- **WHEN** a request runs any write-effect command against the audit log directory, the active log, or any rotated log file
+- **THEN** the request is refused, so that rotation cannot be used to age records out of protection
 
 #### Scenario: Policy cannot exempt itself
 
@@ -98,9 +119,16 @@ Protected paths SHALL be identified by **filesystem identity — device and inod
 - **WHEN** a request reads the active policy file with a permitted read command
 - **THEN** the request succeeds
 
-### Requirement: Policy declares roots, programs, commands, effects, arguments, tools, and permissions
+### Requirement: Policy declares roots, programs, commands, effects, argument allowlists, tools, and permissions
 
-The system SHALL accept: configured roots; the program directories from which commands may be resolved; permitted commands, each with its **effect** and optional **permitted argument patterns**; denied commands; enabled tools; and a per-command permission of `allow`, `ask`, or `deny`. A denied command SHALL remain denied even if also listed as permitted. A tool that is not enabled SHALL NOT be offered.
+The system SHALL accept: configured roots; the program directories from which commands may be resolved; permitted commands, each carrying its **effect** and its **allowlist of permitted argument shapes**; denied commands; enabled tools; and a per-command permission of `allow`, `ask`, or `deny`.
+
+A command declaring no argument allowlist SHALL accept no arguments. A denied command SHALL remain denied even if also listed as permitted. A tool that is not enabled SHALL NOT be offered, except the policy-reporting tool, which is always available.
+
+#### Scenario: A command with no argument allowlist accepts no arguments
+
+- **WHEN** policy permits a command but declares no argument shapes for it
+- **THEN** requests supplying any argument are refused, because absent an allowlist there is nothing an argument can match
 
 #### Scenario: A command's effect comes from policy
 
@@ -119,18 +147,22 @@ The system SHALL accept: configured roots; the program directories from which co
 
 ### Requirement: `ask` requires an interactive client and otherwise denies
 
-The system SHALL determine at startup whether an interactive client is present, from the capabilities the client declares when the session is initialised. Where a command's permission is `ask` and no interactive client is present, the system SHALL refuse the request. It SHALL NOT treat `ask` as `allow`.
+The system SHALL treat a client as interactive **only** where it declares the MCP `elicitation` capability at session initialisation — the sole capability meaning a human can be asked a question. The system SHALL NOT infer interactivity from `sampling`, which asserts that a model will answer, nor from `roots`. Where a command's permission is `ask` and the client is not interactive by that test, the system SHALL refuse the request. It SHALL NOT treat `ask` as `allow`.
+
+#### Scenario: A client offering only model-answered prompts is not interactive
+
+- **WHEN** a client declares `sampling` but not `elicitation`, and a command whose permission is `ask` is requested
+- **THEN** the request is refused, because `sampling` routes the question to a model rather than a human
 
 #### Scenario: Headless operation refuses rather than permits
 
-- **WHEN** a command whose permission is `ask` is requested and the client declared no interactive capability at initialisation
-- **THEN** the request is refused
-- **AND** startup output records that `ask` was downgraded to `deny`
+- **WHEN** a command whose permission is `ask` is requested and the client declared no `elicitation` capability
+- **THEN** the request is refused, and startup output records that `ask` was downgraded to `deny`
 
-#### Scenario: An interactive client leaves the decision to the host
+#### Scenario: An elicitation-capable client is asked
 
-- **WHEN** a command whose permission is `ask` is requested and the client declared an interactive capability
-- **THEN** the request is surfaced to the host for approval rather than executed directly
+- **WHEN** a command whose permission is `ask` is requested and the client declared `elicitation`
+- **THEN** the human is asked before the command runs
 
 ### Requirement: A fresh installation is safe and self-explanatory
 

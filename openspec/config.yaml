@@ -12,19 +12,37 @@ context: |
   docs/superpowers/specs/2026-08-13-mac-shell-mcp-2.0-security-redesign.md and it
   is authoritative — read it before generating artifacts.
 
-  Non-negotiable invariants from that spec:
+  Non-negotiable invariants from that spec (revised 2026-08-28 after two
+  adversarial review rounds returned 32 blocks and four live exploits):
   - NO shell. execFile is called without the `shell` option, ever. Passing
     `shell` re-introduces the verified CWE-78 command injection.
   - The agent cannot widen its own authority. No MCP tool mutates policy —
     such tools are absent, not merely gated.
-  - Authorization is effect x scope computed per call (does the command mutate,
-    and do its realpath-resolved arguments land inside configured roots), never
-    a static command-name allowlist.
+  - ALLOWLISTS, NEVER DENYLISTS. Every command carries a bounded allowlist of
+    argument shapes. A denylist is a list of what someone thought of; it was
+    tried and defeated by `git -c alias`, `git --git-dir`, and `awk system()`.
+  - A command belongs in the default set only if a bounded grammar can be stated
+    under which it cannot name another program or script, and cannot reach a
+    path the system did not scope-check. Anything else needs explicit human
+    configuration.
+  - Authorization authorizes the PROGRAM as well as the arguments: resolve to an
+    absolute path (case-corrected, symlinks followed) BEFORE the policy match,
+    match by resolved path not basename, and refuse any program resolving inside
+    a root. Roots hold data, never code.
+  - Confined tools use effect x scope; `execute_external_command` is the only
+    route outside the roots.
   - The config file is canonical; the MCPB manifest is one delivery mechanism.
-  - path-guard hard-codes protection of the config file and its PARENT directory
-    against every write-effect command, non-overridable from config itself.
+  - Protection is keyed on filesystem identity (st_dev, st_ino) captured at
+    startup AND by path, covering every discovery location and its ancestors,
+    every program directory, and the whole audit log directory. Non-overridable
+    from config itself.
   - Fail closed. Ambiguity denies, and every denial names what IS allowed.
-  - `ask` degrades to `deny` when no interactive client is present, never to `allow`.
+  - `ask` requires the MCP `elicitation` capability specifically — NOT `sampling`,
+    which routes the question to a model rather than a human. Otherwise `ask`
+    degrades to `deny`, never to `allow`.
+  - NO DELETE in 2.0. `rm` is FORBIDDEN in 1.x, so this is zero regression. The
+    deferred spec is openspec/deferred/delete-safety-2.1.md; it needs MCP
+    elicitation before it is safe.
 
   Testing: Jest runs against compiled output in build/ (jest.config.js sets
   transform: {} and matches tests/**/*.test.js), so `npm run build` gates tests.

@@ -1,18 +1,43 @@
 ## Purpose
 
-Decides whether a requested program may run with the requested arguments, by authorizing the program itself and then combining what it does to the filesystem with where its arguments actually resolve, so that authorization reflects blast radius rather than a command's name.
+Decides whether a requested program may run with the requested arguments, by admitting only programs and argument shapes whose behavior is bounded, so that authorization rests on what a command provably cannot do rather than on a list of the ways it is known to misbehave.
 
 ## ADDED Requirements
 
+### Requirement: Only commands with a bounded argument grammar are admitted
+
+The system SHALL admit a command only where policy declares an **allowlist** of the argument shapes it accepts, and SHALL refuse any argument not matching that allowlist. The system SHALL NOT rely on denylists of forbidden arguments.
+
+A command qualifies for the shipped default set only where a bounded grammar can be stated under which it **cannot name another program or script for execution, and cannot reach a path the system did not scope-check**. Anything failing that test SHALL be absent from the default set and admitted only by explicit human configuration.
+
+#### Scenario: An argument outside the allowlist is refused
+
+- **WHEN** a request supplies an argument matching no permitted pattern for that command
+- **THEN** the request is refused, and the refusal names the permitted argument shapes
+
+#### Scenario: A newly discovered dangerous flag needs no rule
+
+- **WHEN** a command gains a flag that would let it execute another program
+- **THEN** requests using that flag are already refused, because it appears in no allowlist
+
+#### Scenario: Position does not constrain matching
+
+- **WHEN** a command permits patterns for `-l` and for a path, and the request is `ls -l somefile`
+- **THEN** the request is permitted, rather than refused for exceeding a positional list
+
 ### Requirement: The executed program is authorized, not only its arguments
 
-The system SHALL resolve the requested command to an absolute program path before authorizing it, and SHALL match it against policy by that **resolved path**, never by basename alone. The system SHALL resolve programs only from a configured set of program directories, and SHALL refuse to execute any program whose resolved path lies inside a configured root. A command carrying no declared effect SHALL be refused.
+The system SHALL resolve the requested command to an absolute program path using a resolution that corrects case on case-insensitive filesystems and follows symbolic links, and SHALL perform that resolution **before** both the policy match and the in-root refusal below. It SHALL match policy by **resolved path**, never by basename. Programs SHALL be resolved only from configured program directories, and any program resolving inside a configured root SHALL be refused. A command carrying no declared effect SHALL be refused.
 
 #### Scenario: A program written into a root cannot be executed
 
-- **WHEN** a permitted in-root write creates a file named `ls` inside a configured root, it is made executable, and a request asks to execute it
+- **WHEN** a permitted in-root write creates an executable file named after a permitted command inside a configured root, and a request asks to execute it
 - **THEN** the request is refused, because roots hold data rather than programs
-- **AND** the refusal does not depend on the file's name
+
+#### Scenario: A symlink in a program directory cannot reach into a root
+
+- **WHEN** a program directory contains a symbolic link resolving to a file inside a configured root
+- **THEN** the request is refused, because resolution precedes the in-root test
 
 #### Scenario: Basename collision does not grant authority
 
@@ -24,72 +49,66 @@ The system SHALL resolve the requested command to an absolute program path befor
 - **WHEN** a request names a command for which policy declares no effect
 - **THEN** the request is refused rather than defaulting to any effect
 
-### Requirement: Commands that can execute other programs are denied as a class
+### Requirement: `git` runs read-only in a controlled environment
 
-The system SHALL treat a command as **exec-capable** when it can spawn a process, evaluate code, or invoke a shell, and SHALL refuse every exec-capable command unless policy names it explicitly. This class SHALL include at minimum command interpreters, scripting languages, and text processors offering a system-execution facility.
+Where policy permits `git`, the system SHALL restrict it to an allowlist of read-only subcommands and SHALL execute it in an environment that structurally disables configuration, alias, pager and hook execution — neutralising system, global and repository-directory configuration, forcing a non-interactive pager, and disabling terminal prompting. The subcommand and flag allowlists SHALL be the only permitted arguments.
 
-The system SHALL state, in its published documentation, that per-command argument rules cover only the commands they name and are not a general defence.
+#### Scenario: Repository-directory redirection is refused
 
-#### Scenario: A text processor with a system facility is refused
+- **WHEN** a request supplies `--git-dir`, `--work-tree`, `-C`, `-c`, `--exec-path`, or `--config-env`
+- **THEN** the request is refused, because none appears in the flag allowlist
 
-- **WHEN** a request runs `awk` with a program text invoking its `system()` facility
-- **THEN** the request is refused because `awk` is exec-capable, regardless of whether any argument is path-shaped
+#### Scenario: An alias planted in a reachable repository does not execute
 
-#### Scenario: An interpreter is refused by class, not by enumeration
+- **WHEN** a repository reachable by the request declares an alias whose value invokes a shell
+- **THEN** the alias does not execute, because configuration is neutralised by the environment rather than by enumerating the flags that reach it
 
-- **WHEN** a request runs `perl`, `python`, `ruby`, `node`, `osascript`, `env`, `xargs`, or `sh` with any arguments
-- **THEN** the request is refused because each is exec-capable
+#### Scenario: Only read-only subcommands run
 
-#### Scenario: Explicit policy can still enable one
+- **WHEN** a request invokes a `git` subcommand outside the permitted read-only set
+- **THEN** the request is refused
 
-- **WHEN** policy names an exec-capable command explicitly
-- **THEN** it may run, subject to every other rule
+### Requirement: Confined authorization is computed from effect and scope
 
-### Requirement: Authorization is computed from effect and scope
-
-The system SHALL classify every request by **effect** (`read`, `write`, or `delete`) crossed with **scope** (whether every path-shaped argument resolves inside a configured root), and SHALL then apply the command's configured permission of `allow`, `ask`, or `deny`. The system SHALL NOT authorize on the command name alone.
+For `execute_command` and `execute_pipeline`, the system SHALL classify every request by **effect** (`read` or `write`) crossed with **scope** — whether every path-shaped argument resolves inside a configured root — and SHALL then apply the command's configured permission of `allow`, `ask`, or `deny`. A request reaching outside the configured roots SHALL be refused by these tools.
 
 #### Scenario: Read inside a configured root is permitted
 
-- **WHEN** `grep pattern ./src/index.ts` is requested, the path resolves inside a configured root, and `grep`'s permission is `allow`
+- **WHEN** `grep pattern ./src/index.ts` is requested through `execute_command`, the path resolves inside a configured root, and `grep`'s permission is `allow`
 - **THEN** the command executes without prompting
 
-#### Scenario: The same read outside every root is refused
+#### Scenario: The same read outside every root is refused by the confined tool
 
-- **WHEN** `grep AKIA ~/.aws/credentials` is requested and no configured root contains that path
-- **THEN** the request is refused, and the refusal states that the path lies outside the configured roots
+- **WHEN** `grep AKIA ~/.aws/credentials` is requested through `execute_command`
+- **THEN** the request is refused, the refusal states that the path lies outside the configured roots, and it names `execute_external_command` as the tool for out-of-root work
 
 #### Scenario: A command whose permission is `ask` is not executed silently
 
-- **WHEN** a request names a command whose configured permission is `ask`, and every other rule permits it
-- **THEN** the request is not executed on this call
-- **AND** the outcome follows the interactive-client rule in the policy-configuration capability
+- **WHEN** a request names a command whose configured permission is `ask` and every other rule permits it
+- **THEN** the request is not executed on this call, and the outcome follows the interactive-client rule in the policy-configuration capability
 
-#### Scenario: No configured roots refuses everything
+#### Scenario: No configured roots refuses everything confined
 
-- **WHEN** any command is requested and no roots are configured
+- **WHEN** any command is requested through `execute_command` and no roots are configured
 - **THEN** the request is refused and the refusal names the allowed commands and states where roots are configured
 
-### Requirement: Tools are split by confinement and carry truthful annotations
+### Requirement: Out-of-root work is reachable only through the external tool
 
-The system SHALL expose `execute_command` for confined, non-delete requests and `execute_external_command` for requests that reach outside configured roots or delete. Each tool SHALL declare MCP annotations that accurately describe it: `execute_command` with `openWorldHint: false` and `readOnlyHint: false`; `execute_external_command` with `openWorldHint: true` and `destructiveHint: true`; `execute_pipeline` with `openWorldHint: false` and `readOnlyHint: true`.
-
-#### Scenario: An out-of-scope call to the confined tool is refused, not rerouted
-
-- **WHEN** `execute_command` is called with an argument resolving outside every configured root
-- **THEN** the call is refused and the refusal names `execute_external_command` as the correct tool
-- **AND** the command does not execute
-
-#### Scenario: A delete requested through the confined tool is refused
-
-- **WHEN** `execute_command` is called with a command whose effect is `delete`
-- **THEN** the call is refused and names `execute_external_command`
+The system SHALL expose `execute_external_command` as the sole means of operating outside the configured roots. Requests through it SHALL be subject to program authorization, the argument allowlist, and the command's permission, and SHALL be refused only where one of those refuses them — never merely for being out of scope.
 
 #### Scenario: The external tool executes when policy permits
 
 - **WHEN** `execute_external_command` is called with a permitted command whose arguments resolve outside the configured roots, and that command's permission is `allow`
 - **THEN** the command executes and its result is returned
-- **AND** it is refused only where policy refuses it, never merely because it is out of scope
+
+#### Scenario: The external tool still enforces every other rule
+
+- **WHEN** `execute_external_command` is called with an argument matching no permitted pattern
+- **THEN** the request is refused
+
+### Requirement: Tools carry truthful annotations
+
+The system SHALL declare MCP annotations that accurately describe each tool: `execute_command` with `openWorldHint: false` and `readOnlyHint: false`; `execute_external_command` with `openWorldHint: true`; `execute_pipeline` with `openWorldHint: false` and `readOnlyHint: true`; and the reporting tools with `readOnlyHint: true`.
 
 #### Scenario: Annotations match actual behavior
 
@@ -99,13 +118,12 @@ The system SHALL expose `execute_command` for confined, non-delete requests and 
 
 ### Requirement: Path-shaped arguments are resolved and confined
 
-The system SHALL treat an argument as path-shaped when it is not a flag and either contains a path separator or `~`, or resolves to an existing filesystem entry, resolving relative paths against the request's working directory. Where an argument attaches a value to a flag — whether separated by `=` or joined to a short flag — the system SHALL scope-check the attached value as a candidate path. The system SHALL compare paths after resolving symbolic links and after case-correcting them on case-insensitive filesystems, and SHALL compare on whole path segments.
+The system SHALL treat an argument as path-shaped when it is not a flag and either contains a path separator or `~`, or resolves to an existing filesystem entry, resolving relative paths against the request's working directory. Where an argument attaches a value to a flag — separated by `=` or joined to a short flag — the system SHALL scope-check the attached value as a candidate path. Paths SHALL be compared after resolving symbolic links, after case-correcting on case-insensitive filesystems, and on whole path segments.
 
 #### Scenario: An attached flag value is scope-checked
 
 - **WHEN** a request passes `--output=/etc/passwd` or `-o/etc/passwd`
 - **THEN** the attached value is treated as a candidate path and scope-checked
-- **AND** the request is refused when it resolves outside every root
 
 #### Scenario: A symlink pointing outside a root does not escape
 
@@ -124,48 +142,8 @@ The system SHALL treat an argument as path-shaped when it is not a flag and eith
 
 #### Scenario: An argument that cannot be classified fails closed
 
-- **WHEN** an argument such as `@responsefile` or `-` cannot be confidently classified as a path or a non-path
+- **WHEN** an argument such as `@responsefile` or `-` cannot be confidently classified
 - **THEN** it is treated as out-of-scope rather than assumed confined
-
-### Requirement: Commands that can escape their effect class are constrained by argument
-
-The system SHALL refuse arguments that let a permitted command execute other programs, alter its own configuration, or destroy recoverability. These argument rules SHALL be insensitive to flag order, spelling, and short-flag fusion.
-
-#### Scenario: find cannot execute arbitrary programs
-
-- **WHEN** a request passes `-exec`, `-execdir`, `-ok`, `-okdir`, `-delete`, or `-fprintf` to `find`
-- **THEN** the request is refused and names the offending argument
-
-#### Scenario: git cannot be turned into a shell
-
-- **WHEN** a request passes `-c`, `--exec-path`, `-C`, or any configuration-writing subcommand to `git`
-- **THEN** the request is refused, because `git -c alias.<name>='!<shell>'` executes arbitrary commands
-
-#### Scenario: git destructive subcommands are refused in any spelling
-
-- **WHEN** a request invokes `git clean` with the force and directory flags in any order or fusion, such as `-fdx`, `-xdf`, or `-x -d -f`
-- **THEN** the request is refused
-- **AND** the same holds for `git reset --hard`, `git push --force`, `git push --force-with-lease`, and `git checkout -- .`
-
-#### Scenario: git cannot destroy the recoverability the delete rules depend on
-
-- **WHEN** a request invokes `git gc --prune=now` or `git reflog expire --expire=now`
-- **THEN** the request is refused, because the delete-safety recoverability report would otherwise report recoverable content that has been destroyed
-
-### Requirement: Argument allowlists match as a set and reject on mismatch
-
-Where a command declares permitted argument patterns, the system SHALL require every supplied argument to match at least one pattern, independent of position, and SHALL refuse the request when any argument matches none.
-
-#### Scenario: Position does not constrain matching
-
-- **WHEN** a command permits the pattern for `-l` and the request is `ls -l somefile`
-- **AND** `somefile` also matches a permitted pattern
-- **THEN** the request is permitted, rather than refused for exceeding a positional list
-
-#### Scenario: An unmatched argument is refused outright
-
-- **WHEN** a request supplies an argument matching no permitted pattern
-- **THEN** the request is refused rather than downgraded to a lesser tier
 
 ### Requirement: No tool mutates policy
 
@@ -179,20 +157,23 @@ The system SHALL NOT expose any tool that adds, removes, or re-classifies a comm
 #### Scenario: A denied command cannot be promoted
 
 - **WHEN** a client attempts to reach any policy-mutating tool by name
-- **THEN** the call fails as an unknown tool
-- **AND** the set of permitted commands is unchanged
+- **THEN** the call fails as an unknown tool, and the set of permitted commands is unchanged
 
-### Requirement: The agent can discover what is permitted
+### Requirement: The agent can always discover what is permitted
 
-The system SHALL expose a read-only means of reporting the effective policy — the permitted commands, their effects and permissions, and the configured roots — so that a client can determine what is allowed without attempting refused calls.
+The system SHALL expose a read-only means of reporting the effective policy — permitted commands with their effects, permitted argument shapes and permissions, and the configured roots. This SHALL always be available and SHALL NOT be disableable, so that a client can never be left unable to determine what is allowed.
 
 #### Scenario: Policy is reported without being mutable
 
 - **WHEN** a client requests the effective policy
-- **THEN** the permitted commands, their effects and permissions, and the configured roots are returned
-- **AND** no means of altering any of them is offered
+- **THEN** the permitted commands, their effects, argument shapes and permissions, and the configured roots are returned, and no means of altering any of them is offered
 
-#### Scenario: Reporting policy does not disclose beyond the policy
+#### Scenario: Policy reporting cannot be switched off
+
+- **WHEN** policy omits the reporting tool from its enabled tools
+- **THEN** the reporting tool remains available, because a client unable to discover the policy cannot use the server correctly
+
+#### Scenario: Reporting policy discloses nothing beyond policy
 
 - **WHEN** the effective policy is reported
 - **THEN** it contains only configured policy values, and no filesystem contents

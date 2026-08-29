@@ -27,7 +27,7 @@ The system SHALL append a record for every request it handles, whether permitted
 
 The system SHALL record by default, SHALL write to a configurable location, and SHALL bound the log's size by **rotating** to a new file rather than by truncating or rewriting the active one, so that the append-only guarantee holds within each file. The system SHALL report where rotated records went.
 
-The active log SHALL be protected from write- and delete-effect commands, as required by the policy-configuration capability, so that append-only is a property of the system rather than a convention the agent may break.
+The **audit log directory and every file in it** — active and rotated alike — SHALL be protected from write-effect commands, as required by the policy-configuration capability, so that append-only is a property of the system rather than a convention the agent may break, and so that rotation cannot be used to age records out of protection.
 
 #### Scenario: Recording happens without configuration
 
@@ -41,8 +41,13 @@ The active log SHALL be protected from write- and delete-effect commands, as req
 
 #### Scenario: The agent cannot erase its own trail
 
-- **WHEN** a request runs a write- or delete-effect command against the active log
+- **WHEN** a request runs a write-effect command against the active log, a rotated log, or the log directory
 - **THEN** the request is refused
+
+#### Scenario: Rotation cannot be pumped to escape protection
+
+- **WHEN** the agent issues many refused requests to force rotation, then targets the rotated file
+- **THEN** the rotated file is refused too, because protection covers the directory rather than the active file
 
 ### Requirement: The server proposes configuration but cannot apply it
 
@@ -63,6 +68,12 @@ The system SHALL offer a means of summarizing recorded history into suggested co
 - **WHEN** a summary suggesting additional commands is produced
 - **THEN** the set of permitted commands is unchanged
 - **AND** the policy file is not written, consistent with the server being unable to modify its own configuration
+
+#### Scenario: A suggestion cannot carry argument-derived content
+
+- **WHEN** a summary is produced after requests whose arguments contained configuration-like text
+- **THEN** the suggestion contains only a fixed set of fields with values drawn from server-side data, never text derived from request arguments
+- **AND** it never proposes a program directory, since that would manufacture a path to authoring programs
 
 #### Scenario: Repeated refusals cannot manufacture a suggestion
 
