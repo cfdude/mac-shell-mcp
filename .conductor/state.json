@@ -9,14 +9,110 @@
       "status": "active",
       "role": "epic",
       "lane": "openspec",
-      "links": [],
+      "links": [
+        {
+          "type": "relates-to",
+          "epic": "npm-name-dispute",
+          "reason": "2.0.0 publish target depends on which name is resolved (task 13.2)"
+        },
+        {
+          "type": "relates-to",
+          "epic": "security-advisory-disclosure",
+          "reason": "advisories publish after 2.0.0 ships"
+        }
+      ],
       "reconcileNeeded": false,
       "attributedCommits": [],
       "startedAt": "2026-08-28T22:46:06.110Z"
+    },
+    {
+      "id": "npm-name-dispute",
+      "title": "Reclaim or replace the mac-shell-mcp npm name (3rd-party republication)",
+      "priority": "P0",
+      "status": "blocked",
+      "role": "epic",
+      "lane": "external",
+      "links": [],
+      "reconcileNeeded": false,
+      "attributedCommits": [],
+      "startedAt": "2026-08-29T00:42:29.457Z",
+      "stories": [
+        {
+          "title": "Await reply from jensshum -- sent 2026-08-28, escalate 2026-09-03",
+          "done": true
+        },
+        {
+          "title": "File npm dispute + DMCA + security escalation (docs/disputes/npm-name-dispute.md S6)",
+          "done": false
+        },
+        {
+          "title": "Request deprecation of mac-shell-mcp@1.0.4 pointing at the repo",
+          "done": false
+        },
+        {
+          "title": "Publish 2.0.0 as @cfdude/mac-shell-mcp -- unblocks release regardless of dispute outcome",
+          "done": false
+        },
+        {
+          "title": "Preserve mac-shell-mcp-1.0.4.tgz as evidence against an unpublish",
+          "done": true
+        }
+      ]
+    },
+    {
+      "id": "security-advisory-disclosure",
+      "title": "Coordinated disclosure: 4 advisories, 4 reporters, 2 CVEs",
+      "priority": "P0",
+      "status": "blocked",
+      "role": "epic",
+      "lane": "external",
+      "links": [
+        {
+          "type": "depends-on",
+          "epic": "mac-shell-mcp-2-security-redesign",
+          "reason": "advisories cannot publish until 2.0.0 is on npm"
+        }
+      ],
+      "reconcileNeeded": false,
+      "attributedCommits": [],
+      "stories": [
+        {
+          "title": "Consolidate 3 duplicate CWE-78 advisories into one crediting hackwither, infosec-traceforce, bebold6133",
+          "done": false
+        },
+        {
+          "title": "Finalize GHSA-q7hh-g47q-hwqj (CWE-862, Taran-Douley) from the reporter's supplied draft",
+          "done": false
+        },
+        {
+          "title": "Resolve CVSS discrepancy: reporter 8.4 High vs MITRE portal 9.3 Critical",
+          "done": false
+        },
+        {
+          "title": "Score CWE-78; decide whether escaping the allowlist warrants S:C",
+          "done": false
+        },
+        {
+          "title": "Set affected <= 1.1.0 / fixed 2.0.0 on both, request CVEs",
+          "done": false
+        },
+        {
+          "title": "Publish only AFTER 2.0.0 is live on npm -- publishing first 0-days existing users",
+          "done": false
+        },
+        {
+          "title": "Reply to each CWE-78 reporter acknowledging the 211-day triage delay",
+          "done": false
+        },
+        {
+          "title": "Notify @iflow-mcp (MIT-compliant mirror) so they can update",
+          "done": false
+        }
+      ]
     }
   ],
   "detourStack": [],
-  "revision": 6,
+  "revision": 28,
   "archiveBackfilledAt": "2026-08-28T22:45:37.558Z",
   "pmVersion": "0.30.0",
   "platform": "claude-code"

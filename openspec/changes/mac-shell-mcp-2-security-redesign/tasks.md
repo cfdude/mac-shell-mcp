@@ -93,20 +93,17 @@
 - [ ] 12.4 Verify against the commits, not the working tree: for every task, run `git show --stat <that task's sha>` and assert each file the task claims to change appears in THAT commit; a task whose file is absent from its commit fails even if the working tree holds the edit
 - [ ] 12.5 Run Gate 2 implementation review on the committed `BASE..HEAD` diff via a fresh-context subagent covering spec alignment, real tests passing, error and edge handling, and security; fix Critical and Important findings, then verify by recording `record-gate-review mac-shell-mcp-2-security-redesign --gate 2 --verdict pass --base-sha <base> --head-sha <head>`
 
-## 13. Release and disclosure
+## 13. Release
+
+> **Scope note.** The npm-name dispute and the advisory disclosure are tracked as SEPARATE
+> conductor epics — `npm-name-dispute` and `security-advisory-disclosure` — because both wait on
+> third parties and neither can be completed by code. Leaving them here would make this change
+> impossible to archive. See `docs/disputes/npm-name-dispute.md`.
 
 - [ ] 13.1 Bump to `2.0.0`, update `CHANGELOG.md` naming every removed tool as breaking, and verify `npm pack --dry-run` ships `build/` plus the sample config and no stray files
-- [ ] 13.2 Resolve the npm distribution blocker BEFORE publishing: the name `mac-shell-mcp` on npm is **not this project** — it is `1.0.4` published 2025-04-12 by `jensshum`, containing this repo's code and README with `author`/`repository`/`homepage`/`bugs` stripped, no LICENSE file, and both vulnerable sinks intact. Decide between claiming the name via npm's dispute process and publishing as `@cfdude/mac-shell-mcp`; verify by confirming `npm owner ls` lists the intended owner for whichever name is chosen
-- [ ] 13.2a Publish `2.0.0` under the resolved name **before** any advisory is public, and verify the published version installs and starts cleanly from a clean directory
-- [x] 13.2b Send the direct-contact message — sent 2026-08-28 from `rsherman@velocityinteractive.com`, cc `security@onvex.ai`, Gmail id `1a04ac76d8e3f3c8`, confirmed carrying the `SENT` label with no bounce. It had been trashed after sending, which hid it from default-scope Gmail search (Trash is excluded unless the query says `in:anywhere`). Escalate to 13.2c if no reply by 2026-09-03
-- [ ] 13.2c File the npm dispute, DMCA, and security escalation (§6) covering license non-compliance, name confusion, and the unremediable vulnerability exposure; verify by recording the npm support ticket reference
-- [ ] 13.2d Request deprecation of `mac-shell-mcp@1.0.4` pointing at this repository, as the fallback if neither transfer nor unpublication is granted; verify the deprecation notice appears on `npm view mac-shell-mcp`
-- [ ] 13.3 Triage the four existing advisories, none of which has been triaged or assigned a CVE: consolidate the three duplicate CWE-78 reports (`GHSA-2h3j-235x-vx2q`/`hackwither` filed 2026-01-28, `GHSA-8qwq-gwp3-g5h7`/`infosec-traceforce`, `GHSA-h926-3g54-mr3v`/`bebold6133`) into ONE advisory crediting all three reporters in filing order, and close the other two as duplicates naming the survivor; verify no reporter loses credit and that this review is NOT credited with finding CWE-78
-- [ ] 13.4 Finalize `GHSA-q7hh-g47q-hwqj` (CWE-862, `Taran-Douley`) from the reporter's supplied draft text, resolving the CVSS discrepancy between their 8.4 High and the 9.3 Critical the MITRE portal produced; verify the published score and vector agree with the description
-- [ ] 13.5 Set affected `<= 1.1.0` and fixed `2.0.0` on both surviving advisories and request CVEs, and verify neither is published before 13.2 confirms `2.0.0` installs from npm
-- [ ] 13.6 Publish both advisories and comment on issue #14 linking them, and verify the issue reflects the fixed version
-- [ ] 13.6a Notify `@iflow-mcp` (`chatflowdev@gmail.com`) that `@iflow-mcp/mac-shell-mcp@1.1.0` ships the advisory-tracked vulnerabilities, so their mirror can be updated — they are an MIT-compliant redistributor, so this is coordination and not a dispute; verify the notice is sent once 2.0.0 is published
-- [ ] 13.7 Reply to each of the three CWE-78 reporters on their advisory, acknowledging the delay — the oldest went 211 days without triage — and naming the fixed version; verify each advisory carries a maintainer response
+- [ ] 13.2 Confirm the publish target with the `npm-name-dispute` epic before publishing — the bare name `mac-shell-mcp` is held by a third party, so the fallback is `@cfdude/mac-shell-mcp`; verify `npm owner ls <resolved name>` lists the intended owner
+- [ ] 13.3 Publish `2.0.0` under the resolved name and verify it installs and starts cleanly from a clean directory
+- [ ] 13.4 Notify the `security-advisory-disclosure` epic that `2.0.0` is live, since that is the gate on publishing any advisory; verify the published version is reachable via `npm view` before signalling
 
 ## 14. Close out
 
