@@ -94,6 +94,12 @@ The system SHALL support composing commands by connecting each stage's standard 
 - **THEN** the pipeline is refused
 - **AND** no stage executes
 
+#### Scenario: An intermediate stage is bounded too
+
+- **WHEN** an early pipeline stage produces more output than the configured cap
+- **THEN** collection stops and the pipeline is terminated, rather than the stage's whole output being buffered for the next stage
+- **AND** the cap therefore bounds memory across the pipeline, not only at its end
+
 #### Scenario: A read-only pipeline cannot reach outside the roots
 
 - **WHEN** a pipeline requests `cat ~/.aws/credentials` followed by `grep AKIA`, where both stages are read-effect

@@ -29,7 +29,7 @@ A command's declared effect is a **label, not a guarantee**. Where a command off
 
 ### Requirement: The executed program is authorized, not only its arguments
 
-The system SHALL resolve the requested command to an absolute program path using a resolution that corrects case on case-insensitive filesystems and follows symbolic links, and SHALL perform that resolution **before** both the policy match and the in-root refusal below. The system SHALL refuse to resolve programs from any directory to which an **unprivileged** write path exists — that is, one writable by any user other than a privileged owner. Where the server itself runs as a privileged user, as in a container, the test is ownership and mode rather than "writable by me", which would otherwise refuse every system directory. It SHALL match policy by **resolved path**, never by basename. Programs SHALL be resolved only from configured program directories, and any program resolving inside a configured root SHALL be refused. A command carrying no declared effect SHALL be refused.
+The system SHALL resolve the requested command to an absolute program path using a resolution that corrects case on case-insensitive filesystems and follows symbolic links, and SHALL perform that resolution **before** both the policy match and the in-root refusal below. The system SHALL refuse to resolve programs from any directory to which an **unprivileged** write path exists — that is, one writable by any user other than a privileged owner. Where the server itself runs as a privileged user, as in a container, the test is ownership and mode rather than "writable by me", which would otherwise refuse every system directory. The test SHALL cover the directory's **ancestors** as well, since a writable parent allows the directory itself to be replaced. It SHALL match policy by **resolved path**, never by basename. Programs SHALL be resolved only from configured program directories, and any program resolving inside a configured root SHALL be refused. A command carrying no declared effect SHALL be refused.
 
 #### Scenario: A program written into a root cannot be executed
 
@@ -71,10 +71,16 @@ Scope confinement inspects the arguments of a request. A command that **discover
 - **THEN** the content outside the roots is not returned, because link-following traversal options appear in no allowlist
 - **AND** this holds even though the argument named only the root, which passed the scope check
 
-#### Scenario: A multiply-linked file inside a root is refused
+#### Scenario: A multiply-linked FILE inside a root is refused
 
-- **WHEN** a path inside a configured root has a link count greater than one, so the same content is reachable at another path that may lie outside every root
+- **WHEN** a **non-directory** path inside a configured root has a link count greater than one, so the same content is reachable at another path that may lie outside every root
 - **THEN** the request is refused, since determining where the other links point would require scanning the filesystem
+- **AND** this test is never applied to directories, whose link count reflects the number of subdirectories rather than aliasing — every directory has a count above one, and the platform forbids user hard links to directories in any case
+
+#### Scenario: A directory operand is not refused for its link count
+
+- **WHEN** a request names a directory inside a configured root, such as a recursive search over a project subdirectory
+- **THEN** it is not refused on link count, which would otherwise refuse every directory and make the confined tool unusable
 
 ### Requirement: An argument naming a program to execute is program-authorized
 

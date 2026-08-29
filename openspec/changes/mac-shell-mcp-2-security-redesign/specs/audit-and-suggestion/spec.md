@@ -57,7 +57,7 @@ The **audit log directory and every file in it** — active and rotated alike �
 
 ### Requirement: The server proposes configuration but cannot apply it
 
-The system SHALL offer a means of summarizing recorded history into suggested configuration, expressed in both the config-file form and the host-extension form. It SHALL be able to propose **permission promotions for already-permitted commands** and **roots derived from server-resolved working directories** — never a new command, a program directory, or any value derived from request arguments. The system SHALL NOT apply its own suggestion, and SHALL NOT acquire any permission as a result of making one.
+The system SHALL offer a means of summarizing recorded history into suggested configuration, expressed in both the config-file form and the host-extension form. It SHALL be able to propose **permission promotions for already-permitted commands** and **roots derived from working directories the server itself resolved and admitted for confined calls** (never from a request argument as supplied) — never a new command, a program directory, or any value derived from request arguments. The system SHALL NOT apply its own suggestion, and SHALL NOT acquire any permission as a result of making one.
 
 #### Scenario: A suggestion proposes something actionable
 

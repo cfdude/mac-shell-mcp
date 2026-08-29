@@ -36,13 +36,13 @@ Constraints that shape the approach:
 
 ### Authorize on effect × scope, computed per call
 
-Effect is a static per-command property (`read`/`write`/`delete`); scope is computed by resolving path-shaped arguments and testing them against configured roots.
+Effect is a static per-command property (`read` or `write`); scope is computed by resolving path-shaped arguments and testing them against configured roots.
 
 *Alternative rejected — the existing command-name allowlist.* It cannot distinguish `grep ./src` from `grep ~/.aws/credentials`, which is the distinction that matters. A name-based tier is bypassable precisely because the name is not where the risk lives.
 
 ### Split tools by confinement, and annotate honestly
 
-`execute_command` (confined, non-delete) and `execute_external_command` (reaches outside, or deletes). The confined tool is annotated `readOnlyHint: false` — it genuinely writes inside roots — and earns always-allow through `openWorldHint: false`.
+`execute_command` (confined, non-delete) and `execute_external_command` (reaches outside,). The confined tool is annotated `readOnlyHint: false` — it genuinely writes inside roots — and earns always-allow through `openWorldHint: false`.
 
 The load-bearing annotation is `openWorldHint`, not `readOnlyHint`: `mkdir ./build` inside a chosen root is unremarkable, while *reading* `~/.aws/credentials` is not. Annotating the confined tool `readOnlyHint: true` would be a false claim to the client, and the model depends on these hints being truthful.
 

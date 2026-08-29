@@ -26,20 +26,25 @@ The system SHALL locate its policy by checking, in order: an explicitly configur
 
 ### Requirement: A policy appearing at a new location is reported before it takes effect
 
-Because the discovery order prefers the working directory over the home directory, a file created inside a working directory would silently take precedence on the next start. The system SHALL record, on each run, both which source supplied policy **and that source's filesystem identity**, in a record at a documented default location that is itself a protected location. Where either the winning source or its identity differs from the previously recorded run, the system SHALL NOT adopt the new source. It SHALL instead fall back to the **built-in defaults — the default command set and no configured roots** — and refuse every request with a message naming the unacknowledged source and how to acknowledge it.
+Because the discovery order prefers the working directory over the home directory, a file created inside a working directory would silently take precedence on the next start. The system SHALL record, on each run, both which source supplied policy **and a stable fingerprint of that source** — its filesystem identity where the source is a file, and a digest of its content where the source is host-supplied environment configuration, which has no filesystem identity — in a record at a documented default location that is itself a protected location. Where either the winning source or its identity differs from the previously recorded run, the system SHALL NOT adopt the new source. It SHALL instead fall back to the **built-in defaults — the default command set and no configured roots** — and refuse every request with a message naming the unacknowledged source and how to acknowledge it.
 
 Reporting the change is not sufficient on its own: this server communicates over stdio, so a warning reaches a host log rather than a person.
 
 **The record SHALL be updated only on a run that actually adopted a source.** A run that refused to adopt SHALL leave the record untouched, so that the refusal persists across every subsequent start until a human acts. Recording the refused source would adopt it on the next start; recording the built-in defaults would make the gate permanent.
 
-**Acknowledgement is an explicit out-of-band human action** — the operator states, in a location the agent cannot write, that the new source is intended. The new source SHALL NOT be able to acknowledge itself, on the same principle by which policy cannot exempt itself.
+**Acknowledgement is performed by a human running the server's own command-line acknowledgement subcommand**, which records the current winning source and its identity into the previous-run record and exits. It SHALL NOT be reachable through any MCP tool, so the agent cannot invoke it. The new source SHALL NOT be able to acknowledge itself, on the same principle by which policy cannot exempt itself.
 
-An unreadable or unparseable previous-run record SHALL be treated as a changed source, not as an absent one.
+**An absent previous-run record is a first run, not a change**: the system SHALL adopt the winning source and write the record. This is the bootstrap path, and it is safe because the record's location is protected, so the agent cannot delete it to manufacture a first run. An **unreadable or unparseable** record, by contrast, SHALL be treated as a changed source.
 
 #### Scenario: A newly appeared higher-precedence config does not silently win
 
 - **WHEN** policy was previously supplied by the home configuration file, and a config file now exists in the working directory
 - **THEN** startup reports that the winning source changed and does not adopt the new file unattended
+
+#### Scenario: Changed environment configuration is detected
+
+- **WHEN** policy is supplied by host environment configuration and its content differs from the previously recorded digest
+- **THEN** the change is detected, since environment configuration has no filesystem identity to compare
 
 #### Scenario: Replacing the file at the same path is still detected
 
@@ -67,6 +72,17 @@ An unreadable or unparseable previous-run record SHALL be treated as a changed s
 
 - **WHEN** the newly appeared policy file declares that it is acknowledged
 - **THEN** the declaration has no effect, because acknowledgement is an out-of-band human action
+
+#### Scenario: A human can acknowledge and the server then starts normally
+
+- **WHEN** an operator runs the acknowledgement subcommand while the changed source is present
+- **THEN** the record is updated and the next start adopts that source and serves requests normally
+- **AND** no MCP tool offers this action
+
+#### Scenario: A first run adopts and records
+
+- **WHEN** the server starts with no previous-run record at all
+- **THEN** it adopts the winning source and writes the record, rather than refusing forever
 
 #### Scenario: A corrupted previous-run record is treated as a change
 
