@@ -14,11 +14,21 @@ plan, or a manual list). Follow these rules:
      Then resume.
    - *Substantial* (own design / changes shared behavior / multi-step): run `/pm:detour`.
      It becomes its own epic in the appropriate lane (OpenSpec proposal, Superpowers plan,
-     etc.); PUSH the current epic onto the detour stack in `.conductor/state.json` with a
-     concrete reason and `reconcileOnResume`.
+     etc.). Register that epic FIRST, then PUSH the current one onto the detour stack with
+     `push-detour <parent> --detour <new-id> --reason "<why>" (--reconcile | --no-reconcile)`.
+     NEVER hand-edit `.conductor/state.json` to push or pop a frame. The verb IS the
+     transition, and it is what supplies the validation, the write-conflict guard, the
+     read-back verification and the Honcho line a hand-edit has none of. Exactly one of the
+     two reconcile flags is REQUIRED and there is no default: whether the detour can
+     invalidate the paused epic's plan is a judgment, and a default makes an absent decision
+     look like a considered one. Say `--reconcile` unless you are certain the detour touches
+     nothing the paused epic depends on.
 2. **State of record is `.conductor/state.json`.** After any change to epics, status,
    priority, or the detour stack, re-render with `/pm:status`. Never hand-edit `PROJECT.md`.
-3. **Resuming after a detour** — use `/pm:resume`. If the popped frame had
+3. **Resuming after a detour** — use `/pm:resume`, which pops the frame with
+   `pop-detour [<paused-id>]` — again a verb, never a hand-edit. It removes the frame,
+   resumes the epic and writes `reconcileNeeded` in the SAME write, which is what makes the
+   obligation survive the frame's removal. If the popped frame had
    `reconcileOnResume`, run the reconcile gate (reconciler agent) BEFORE writing code,
    then write its verdict back durably with `record-reconcile <id> --detour <id>
    --verdict valid|invalidated [--amendments "<a>;<b>"]` — this attaches
@@ -26,13 +36,46 @@ plan, or a manual list). Follow these rules:
    clears `reconcileNeeded`, instead of the judgment only ever living in conversation.
 4. **Honcho** — on every PUSH and POP, also write a one-line memory to Honcho
    ("paused X for Y" / "resumed X, reconciled vs Y") so the relationship survives outside
-   this repo.
+   this repo. `push-detour` prints the PUSH line for you and logs it to
+   `.conductor/honcho-memories.log`; paste it into your Honcho tool call. `pop-detour` prints
+   the POP line only when nothing needs reconciling — with a gate armed, "reconciled vs Y" is
+   not yet true, so emit it with `honcho-memory pop <id> "<detour>; reconcile = …"` after the
+   verdict. The engine formats and logs; it never calls Honcho itself.
 5. **Keep `tasks.md` checkboxes truthful** — they are the source of truth for story progress.
 6. **Roadmap as backlog** — work you intend to do but haven't proposed yet can be
    registered now with `/pm:epic add … --status planned` (any lane). Planned epics show
    as ordered backlog in `PROJECT.md` and a `planned: N` count in the briefing, without a
    "no change on disk" warning; `/pm:sync` flips an openspec planned epic to untriaged once
    its change is proposed. Have a roadmap doc? Read it in-session and load each item this way.
+7. **Delegate discovery. If you do not already know the file path, do not go looking
+   yourself.** A subagent's transcript never enters yours — only its final report does — so
+   an open-ended read costs a conclusion instead of a transcript when it is delegated.
+   "Where is X handled", "does a spec for this already exist", "what does this epic touch",
+   "what did the last three changes here do": dispatch an `Explore` or `general-purpose`
+   subagent and use what it concludes. Reserve an INLINE read for the narrow case where you
+   already know the exact file and want one value out of it.
+   This binds the ORCHESTRATING agent, which is the half that has no such rule: a dispatched
+   child is already told to return a fixed report and not to narrate. It binds hardest across
+   a hierarchy run or a multi-epic backlog, where your context survives many epics and is
+   therefore the scarce resource — discovery you perform inline is paid for once per epic and
+   never reclaimed.
+   DELEGATING NEVER WEAKENS A FULL-READ REQUIREMENT. Where this instruction demands the whole
+   document — the epic-level-autonomy preflight scan, and re-reading an epic's source before
+   it becomes the work — the subagent reads the whole document and returns the finding. What
+   is forbidden is substituting a keyword grep for a full read, and that is forbidden
+   whoever performs it.
+
+## Getting help with pm — two channels, and which one can lie
+
+**The INSTALLED engine is the authority on what it accepts.** `node "$ENGINE" <verb> --help`
+(resolve `$ENGINE` the way pm's own command docs do) prints that verb's real flags, projected
+from its own registry — version-exact by construction. Use it before reading engine source.
+
+**For procedure and rationale:** https://pm-plugin.dev/llms.txt indexes the docs (entries are
+already markdown); a free, no-auth MCP at https://pm-plugin.dev/mcp answers in one call.
+
+**The site documents the LATEST release, which may be newer than the pm running here.** A flag
+it shows that your engine refuses is a version gap, not a bug — `/pm:changelog` says which.
 
 ## The gate procedure — required task items
 
@@ -72,6 +115,13 @@ measured across one audited repository, a rule carried by a mandatory task secti
    names, not the position in the file. Mark it at the moment the task source is AUTHORED
    OR AMENDED — a source written before this capability existed gets the marker the first
    time you touch it, or its archive task counts as outstanding work forever.
+   The marker is pm's alone and it COLLIDES with an upstream lint: `openspec validate
+   --archived` knows nothing about it, counts raw checkboxes, and therefore FAILS every
+   correctly archived pm change — reporting `1 incomplete task` against the same file pm
+   reports complete with `· N lifecycle`. Its own help text offers it for pre-commit
+   linting; do NOT wire it into a pm-managed repo. Nothing clears that failure: ticking the
+   archive task would be a false record and dropping the marker would break pm's own archive
+   gate. Ignoring a marked line upstream is the clean fix and it is not pm's to make.
 4. **Attribute every commit to its epic.** At the moment each commit is made, record it:
    `update-epic <id> --attribute-commit <sha>`. The engine infers attribution from NOTHING —
    not the files a commit touches, not an epic id in a message — so an unrecorded commit is
@@ -121,6 +171,33 @@ measured across one audited repository, a rule carried by a mandatory task secti
    precisely what a disposition exists to preserve. `remove-epic` stays available and
    ungated for what it is for: an epic registered in error, a duplicate, a mistake made a
    minute ago — where there is no disposition to record because there was no work.
+7. **Route what the work taught you.** A change teaches three kinds of thing and each has a
+   different destination. Route them BEFORE the change closes, while the evidence is still
+   recoverable. Nothing above this asks, so silence here reads as "nothing was learned"
+   rather than "nobody looked", and the two are indistinguishable afterwards.
+   A PRACTICE, GATE OR DISCIPLINE you adopted to get this change done: register it as an
+   epic, and file it with the tracker as well when it belongs to a product other people
+   use. The evidence goes with it — what went wrong that made the practice necessary,
+   with numbers. That evidence is the strongest part of the eventual spec and it is
+   unrecoverable later; a practice registered without it reads as a preference.
+   FRICTION IN THE TOOLING that you routed around: file it — `/pm:feedback [bug|feature]
+   "<summary>"` for pm itself, and wherever it is tracked for anything else. THIS IS THE
+   DIRECTION THAT GETS MISSED, and the reason is mechanical: a workaround produces working
+   output, so nothing looks broken and nothing prompts. Hand-editing a file a tool owns
+   because no verb exists for it, a command the tool EMITTED that did not run as written,
+   a convention you invented that the tool should have supplied, anything you did twice by
+   hand that it could have done once — each of those is a filing, not a footnote. Measured:
+   two sessions hit one broken recipe in an afternoon, each invented a workaround, neither
+   reported it until asked.
+   A PROCESS FAILURE — how we work, rather than what the tool should do: a lesson file in
+   `docs/lessons/`, carrying its `trigger` written as the situation BEFORE the mistake, a
+   concrete `cost`, and `enforced_in` naming where its rule actually binds. Give it a
+   `detect:` matcher only where the situation is recognisable with near-certainty — the
+   `lesson-advice` hook fires on that matcher before the next mistake, and a hook that is
+   wrong 7 times in 8 trains everyone to ignore the one time it is right, so a lesson that
+   cannot be matched precisely stays retrieval-only.
+   Name which of the three it is out loud. A process lesson filed as a feature request
+   never gets built, and a product gap written down as a lesson never gets fixed.
 
 ## Intake — triage an ask against the whole backlog BEFORE registering it
 
@@ -147,7 +224,22 @@ different names, and identity dedup found none of them.
    superseded one with its own disposition (`--outcome superseded --reason "<what replaced
    it>"`), because a consolidation that leaves both epics open has consolidated nothing.
    A candidate `triage` marks `superseded: true` is already dead — do not consolidate into it.
-4. **Say no out loud when the answer is no.** Not every ask should be taken on, and declining
+4. **Decide the lane; do not inherit it.** `triage` already ran `suggest-lane` for you and
+   its answer reads THE ASK — the words, the size, this repo's `laneRouting` overrides — and
+   nothing else. It cannot ask what a person would ask, whether this work SERVES something
+   already committed to, because pm holds no milestone or product context to weigh and the
+   engine will not invent one. The suggestion is an input; the lane is your call.
+   THE TIE-BREAK IS ASYMMETRIC, and it is not a matter of taste. `claude-code` means no spec,
+   no plan, no gate and no stories — right for a genuine sub-2-hour tweak, and the reason a
+   misrouted epic leaves no record of what it was FOR. Over-processing costs hours;
+   under-processing costs the record permanently, and nothing later can reconstruct it. So an
+   unresolved routing question resolves AWAY from `claude-code`, never into it.
+   Whenever you register in a lane other than the one routing suggested, say why on the epic:
+   `update-epic <id> --notes "lane: <chosen> not <routed> — <why>"`. The tracker-sync
+   procedures below already demand that line; it binds every path that registers an epic,
+   this one included. Measured in pm's OWN repository, not necessarily yours: 83% of epics sat
+   in `claude-code`, 51 of them already archived, none carrying an artifact link.
+5. **Say no out loud when the answer is no.** Not every ask should be taken on, and declining
    by never registering it destroys the record that anybody considered it. Register it, then
    `update-epic <id> --status archived --outcome declined --reason "<why not>" --no-deferrals`.
    Two commands, deliberately: creating an epic directly at `archived` stamps an engine record
@@ -156,6 +248,43 @@ different names, and identity dedup found none of them.
 **This is not a substitute for the identity dedup in the sync procedures below, and they are
 not a substitute for it.** A URL match answers "have I already mirrored THIS item"; triage
 answers "is this ask already in the backlog under another name". Run both.
+
+## Reporting — pm owns what is recorded and what is said; you own how you say it
+
+This section governs how you REPORT. It never governs what the sections above instruct you to
+DO: a brevity contract shortens prose, it does not authorise skipping a required task item, a
+gate, or a recorded disposition.
+
+1. **A recorded fact is not output, and no contract shortens it.** `--outcome` and its
+   `--reason`, `--no-deferrals` or the deferrals it stands in for, a gate verdict,
+   `--attribute-commit`, `--notify`, `record-reconcile`, `record-cross-spec-review` — these
+   are WRITES to `.conductor/state.json`, not sentences. Applying a communication preference
+   to one is data loss, not brevity.
+2. **A report another AGENT reads back is a wire format and does not bend.** The
+   `hierarchy-child-executor`'s `STATUS/DONE/DECISIONS/CONCERNS` block, the
+   `merge-conflict-resolver`'s, and the `reconciler`'s `VERDICT/AMENDMENTS/NOTES`: the
+   orchestrator branches on `STATUS`, and `VERDICT`'s value space is enforced by
+   `record-reconcile` one hop later. Keep those field names and that order exactly. The PROSE
+   INSIDE a field is ordinary writing and follows item 3 like anything else.
+3. **Everything a HUMAN reads follows the user's contract, not pm's.** The consolidated
+   end-of-hierarchy report, the end-of-epic autonomy report, the preflight question batch, a
+   gate summary, `/pm:status` narration, `/pm:next`'s recommendation. If the user
+   has an output style, or a communication contract in their CLAUDE.md, render pm's
+   human-facing output in THAT shape. pm's headings are a DEFAULT for a user who has
+   configured none — not a house style that outranks one. Two competing formats in one
+   session is the defect.
+4. **Map the content into their shape; never drop it to fit.** Reshaping is always allowed;
+   omitting is never. Where the user's shape has no slot for something pm requires — the
+   `notifications[]` read-back, the explicit "are you OK with these?" checkpoint, the
+   deferral list, a blocked child, a `CONCERNS` line worth flagging — ADD a slot rather than
+   drop the element. Silently deleting an obligation to fit a terse contract is the same
+   failure as imposing pm's format over theirs, pointed the other way.
+5. **CLAUDE.md is the only channel that reaches a subagent.** A subagent inherits every level
+   of the CLAUDE.md hierarchy the main conversation loads, `~/.claude/CLAUDE.md` included; an
+   OUTPUT STYLE applies to the main conversation ONLY and does not reach one. So when you
+   dispatch a `hierarchy-child-executor` or the `reconciler` and the user's contract lives
+   only in an output style, carry it into the dispatch prompt yourself — otherwise the child
+   cannot honour a preference it was never given.
 
 ## Epic-level autonomy
 

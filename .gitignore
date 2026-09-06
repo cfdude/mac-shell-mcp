@@ -27,3 +27,6 @@ dist/
 .conductor/detours.log
 .conductor/write-conflicts.log
 .conductor/write-conflicts.latch
+.conductor/commit-watch.json
+.conductor/session-claim.json
+.conductor/activity/
