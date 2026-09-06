@@ -165,7 +165,18 @@ security@onvex.ai
 github.com/cfdude
 ```
 
-## 6. Draft — npm support (steps A–C)
+## 6. npm support escalation (steps A–C) — ✅ SENT 2026-09-06
+
+Sent to `support@npmjs.com` from `rsherman@velocityinteractive.com`, cc `security@onvex.ai`,
+Gmail id `1a07855e145b78a5`, verified present in Sent.
+
+Filed nine days after the direct-contact attempt of 2026-08-28, which received no reply — the
+good-faith window the disputes policy expects. The sent version leads with the **security**
+ground rather than the name: a fixed version now exists as `@the_cfdude/mac-shell-mcp`, so the
+remedy is available and simply cannot reach users who installed under the unscoped name.
+
+Original draft below, retained for the record.
+
 
 > **Package:** `mac-shell-mcp` · **Publisher:** `jensshum` · **Version:** 1.0.4 (2025-04-12)
 > **Claimant:** Rob Sherman, github.com/cfdude — author of github.com/cfdude/mac-shell-mcp

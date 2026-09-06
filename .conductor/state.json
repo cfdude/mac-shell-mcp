@@ -54,7 +54,7 @@
         },
         {
           "title": "File npm dispute + DMCA + security escalation (docs/disputes/npm-name-dispute.md S6)",
-          "done": false
+          "done": true
         },
         {
           "title": "Request deprecation of mac-shell-mcp@1.0.4 pointing at the repo",
@@ -123,7 +123,7 @@
     }
   ],
   "detourStack": [],
-  "revision": 33,
+  "revision": 34,
   "archiveBackfilledAt": "2026-08-28T22:45:37.558Z",
   "pmVersion": "0.39.0",
   "platform": "claude-code"
