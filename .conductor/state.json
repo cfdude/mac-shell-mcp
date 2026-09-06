@@ -23,7 +23,8 @@
       ],
       "reconcileNeeded": false,
       "attributedCommits": [
-        "f91425b"
+        "f91425b",
+        "69ad46409668a85a4064c432b41ce9ebf1570f8b"
       ],
       "startedAt": "2026-08-28T22:46:06.110Z",
       "gateReview": {
@@ -120,10 +121,43 @@
           "done": false
         }
       ]
+    },
+    {
+      "id": "super-shell-mcp-cwe862",
+      "title": "super-shell-mcp ships the same CWE-862 self-approval bypass",
+      "priority": "P0",
+      "status": "queued",
+      "role": "epic",
+      "lane": "external",
+      "links": [],
+      "reconcileNeeded": false,
+      "attributedCommits": [],
+      "stories": [
+        {
+          "title": "Confirm scope: super-shell-mcp@2.0.15 exposes add_to_whitelist, approve_command, get_pending_commands (verified 2026-09-06)",
+          "done": true
+        },
+        {
+          "title": "Decide fix shape: port the 2.0 model, or minimal removal of the six tools",
+          "done": false
+        },
+        {
+          "title": "Check whether CWE-78 is reachable there (shell defaults false, so opt-in only)",
+          "done": false
+        },
+        {
+          "title": "File an advisory on the super-shell-mcp repo crediting the same reporters where applicable",
+          "done": false
+        },
+        {
+          "title": "Ship the fix and publish; super-shell-mcp is cross-platform so likely the wider install base",
+          "done": false
+        }
+      ]
     }
   ],
   "detourStack": [],
-  "revision": 34,
+  "revision": 42,
   "archiveBackfilledAt": "2026-08-28T22:45:37.558Z",
   "pmVersion": "0.39.0",
   "platform": "claude-code"
