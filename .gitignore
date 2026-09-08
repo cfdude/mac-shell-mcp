@@ -20,7 +20,9 @@ dist/
 # IDE and editor files
 .idea/
 .vscode/
-.claude/
+# Claude Code: agent config is versioned; only machine-local files stay out
+.claude/settings.local.json
+.claude/**/precompact_context_*.txt
 *.swp
 *.swo
 .DS_Store
