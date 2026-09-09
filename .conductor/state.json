@@ -35,7 +35,8 @@
           "headSha": "d687520c0c4466cc28041865d33266b2648d5995",
           "reviewer": "cross-spec review R1-R7, 2 fresh-context lenses each; spec artifacts at d687520c0c4466cc28041865d33266b2648d5995"
         }
-      }
+      },
+      "createdAt": "2026-08-28T15:46:49-07:00"
     },
     {
       "id": "npm-name-dispute",
@@ -69,7 +70,8 @@
           "title": "Preserve mac-shell-mcp-1.0.4.tgz as evidence against an unpublish",
           "done": true
         }
-      ]
+      ],
+      "createdAt": "2026-08-28T17:43:35-07:00"
     },
     {
       "id": "security-advisory-disclosure",
@@ -120,7 +122,8 @@
           "title": "Notify @iflow-mcp (MIT-compliant mirror) so they can update",
           "done": false
         }
-      ]
+      ],
+      "createdAt": "2026-08-28T17:43:35-07:00"
     },
     {
       "id": "super-shell-mcp-cwe862",
@@ -153,12 +156,13 @@
           "title": "Ship the fix and publish; super-shell-mcp is cross-platform so likely the wider install base",
           "done": false
         }
-      ]
+      ],
+      "createdAt": "2026-09-06T13:14:32-07:00"
     }
   ],
   "detourStack": [],
-  "revision": 42,
+  "revision": 43,
   "archiveBackfilledAt": "2026-08-28T22:45:37.558Z",
-  "pmVersion": "0.39.0",
+  "pmVersion": "0.40.0",
   "platform": "claude-code"
 }

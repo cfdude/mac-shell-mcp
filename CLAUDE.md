@@ -98,6 +98,18 @@ measured across one audited repository, a rule carried by a mandatory task secti
    that strips one holder and not its siblings leaves a dangling reference — the record
    rendering a pointer to something that no longer exists — and it is invisible to both
    gates for the same diff-scoped reason.
+   AN OPERATION HAS AN INVERSE, and the sweep above cannot reach it. For every operation
+   this change adds or modifies, enumerate that inverse — set against unset, add against
+   remove, append against replace, enable against disable, grant against revoke — then
+   name and justify each inverse that is not shipped, exactly as an unguarded call site
+   must be. An operation shipped without its inverse, and not justified, is a FINDING.
+   The reason the sweep cannot reach this class is mechanical rather than a matter of
+   diligence: enumerating the callers of a thing that is written never leads to the
+   question of whether it can be unwritten. Measured here, six instances shipped past both
+   gates while the call-site obligation was already in force, and the most consequential
+   is a safety surface — pre-authorization grants accumulate with no revoke, so turning
+   autonomy off leaves every prior grant intact and turning it back on silently restores
+   all of them.
 2. **Verify against the commit, not the working tree.** The commit is the unit of verification.
    Reading a file in the working tree is NOT verification. For every task, run
    `git show --stat <that task's sha>` and assert that
@@ -161,7 +173,7 @@ measured across one audited repository, a rule carried by a mandatory task secti
    exclusion ENDS by recording a terminal disposition carrying its required reason, and
    never by removing the record. The archive verb takes TWO halves in ONE invocation — the
    disposition AND a deferral assertion — because the gate refuses either half alone:
-   `update-epic <id> --status archived --outcome delivered|killed|superseded|abandoned|declined --reason "<why>" --no-deferrals`
+   `update-epic <id> --status archived --outcome delivered|killed|superseded|abandoned|declined|unreconstructable --reason "<why>" --no-deferrals`
    (every outcome except `delivered` requires the reason). `--no-deferrals` is the explicit
    "there are none" and is a claim, not a default — swap it for `--deferral
    "<epicId>:<artifact section>"` where work is now held by a registered epic, or
