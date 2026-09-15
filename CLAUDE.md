@@ -268,8 +268,9 @@ DO: a brevity contract shortens prose, it does not authorise skipping a required
 gate, or a recorded disposition.
 
 1. **A recorded fact is not output, and no contract shortens it.** `--outcome` and its
-   `--reason`, `--no-deferrals` or the deferrals it stands in for, a gate verdict,
-   `--attribute-commit`, `--notify`, `record-reconcile`, `record-cross-spec-review` — these
+   `--reason`, `--no-deferrals` or the deferrals it stands in for, a gate verdict or its
+   withdrawal (`--withdraw-gate-review`), `--attribute-commit` or `--withdraw-commit`,
+   `--notify`, `record-reconcile`, `record-cross-spec-review` — these
    are WRITES to `.conductor/state.json`, not sentences. Applying a communication preference
    to one is data loss, not brevity.
 2. **A report another AGENT reads back is a wire format and does not bend.** The
