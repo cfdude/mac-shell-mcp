@@ -30,10 +30,13 @@ plan, or a manual list). Follow these rules:
    resumes the epic and writes `reconcileNeeded` in the SAME write, which is what makes the
    obligation survive the frame's removal. If the popped frame had
    `reconcileOnResume`, run the reconcile gate (reconciler agent) BEFORE writing code,
-   then write its verdict back durably with `record-reconcile <id> --detour <id>
-   --verdict valid|invalidated [--amendments "<a>;<b>"]` — this attaches
-   `{verdict, amendments, reconciledAt}` to the paused epic's link to the detour and
-   clears `reconcileNeeded`, instead of the judgment only ever living in conversation.
+   then write its verdict back durably with `record-reconcile <id> --detour <detourId>
+   --verdict valid|invalidated --amendments none` (the reconciler's `AMENDMENTS: none`), or
+   one `--amendment "<line>"` per other AMENDMENTS line — this attaches
+   `{verdict, amendments, reconciledAt}` to the paused epic's link to that detour, instead of
+   the judgment only ever living in conversation. It is accepted only for a detour pushed
+   `--reconcile` and already popped, and `reconcileNeeded` clears only when no such detour is
+   left unanswered; `pop-detour` names every detour owed.
 4. **Honcho** — on every PUSH and POP, also write a one-line memory to Honcho
    ("paused X for Y" / "resumed X, reconciled vs Y") so the relationship survives outside
    this repo. `push-detour` prints the PUSH line for you and logs it to
@@ -138,13 +141,14 @@ measured across one audited repository, a rule carried by a mandatory task secti
    `update-epic <id> --attribute-commit <sha>`. The engine infers attribution from NOTHING —
    not the files a commit touches, not an epic id in a message — so an unrecorded commit is
    a commit the epic's Gate 2 cannot be checked against. The per-task conventional commit of
-   an OpenSpec apply loop always qualifies. Work already in flight is covered too, but ONLY
-   BEFORE the first attribution: catch up in the order the commits landed, then keep
-   attributing forward. The array is append-only — the engine neither reorders nor
-   de-duplicates it — so catching up AFTER attributing forward leaves an ancestor as the
-   last entry, and the LAST entry is the endpoint a recorded Gate 2 `headSha` is compared
-   against. If forward attribution has already begun, attribute forward only and say so;
-   a wrong endpoint reads as a stale verdict and refuses the archive.
+   an OpenSpec apply loop always qualifies. Work already in flight is covered too: catch up
+   in the order the commits landed, then keep attributing forward. Each value is resolved
+   when it is written and stored as its full object name — `HEAD` or a tag records the
+   commit it names at that moment, and a value that is not a commit in this clone is
+   refused with nothing written. The array is append-only — the engine neither reorders nor
+   de-duplicates it — and every attributed commit must be reached by a recorded Gate 2
+   `headSha` (equal to that head or an ancestor of it), whatever position it holds: one the reviewed
+   head does not reach reads as a stale verdict and refuses the archive.
    ONE EXCLUSION, and it is not a judgment call: the commit that moves
    `openspec/changes/<id>/` under `archive/`, and any commit that only relocates or deletes a
    change's artifacts rather than implementing its work, is lifecycle bookkeeping and

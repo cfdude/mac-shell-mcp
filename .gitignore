@@ -32,3 +32,6 @@ dist/
 .conductor/commit-watch.json
 .conductor/session-claim.json
 .conductor/activity/
+.conductor/session-claim.json*
+.conductor/state.json.lock*
+.conductor/state.json.tmp*
