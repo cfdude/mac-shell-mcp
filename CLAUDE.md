@@ -178,7 +178,8 @@ measured across one audited repository, a rule carried by a mandatory task secti
    never by removing the record. The archive verb takes TWO halves in ONE invocation — the
    disposition AND a deferral assertion — because the gate refuses either half alone:
    `update-epic <id> --status archived --outcome delivered|killed|superseded|abandoned|declined|unreconstructable --reason "<why>" --no-deferrals`
-   (every outcome except `delivered` requires the reason). `--no-deferrals` is the explicit
+   (every outcome except `delivered` requires the reason; for an openspec-lane epic, `delivered` also needs a passing Gate 2,
+   and `unconsidered-outcomes` or the archive gate's refusal names the review to record first). `--no-deferrals` is the explicit
    "there are none" and is a claim, not a default — swap it for `--deferral
    "<epicId>:<artifact section>"` where work is now held by a registered epic, or
    `--declined-deferral "<what>:<why not>"` where you are deliberately not doing it; both
