@@ -30,10 +30,19 @@ plan, or a manual list). Follow these rules:
    resumes the epic and writes `reconcileNeeded` in the SAME write, which is what makes the
    obligation survive the frame's removal. If the popped frame had
    `reconcileOnResume`, run the reconcile gate (reconciler agent) BEFORE writing code,
-   then write its verdict back durably with `record-reconcile <id> --detour <id>
-   --verdict valid|invalidated [--amendments "<a>;<b>"]` — this attaches
-   `{verdict, amendments, reconciledAt}` to the paused epic's link to the detour and
-   clears `reconcileNeeded`, instead of the judgment only ever living in conversation.
+   then write its verdict back durably with `record-reconcile <id> --detour <detourId>
+   --verdict valid|invalidated --amendments none` (the reconciler's `AMENDMENTS: none`), or
+   one `--amendment "<line>"` per other AMENDMENTS line — this attaches
+   `{verdict, amendments, reconciledAt}` to the paused epic's link to that detour, instead of
+   the judgment only ever living in conversation. It is accepted only for a detour pushed
+   `--reconcile` and already popped, and `reconcileNeeded` clears only when no such detour is
+   left unanswered; `pop-detour` names every detour owed.
+   A BASH WRITE IS A WRITE TOO: a heredoc redirection, an in-place `sed`, a `tee`, a
+   copier or anything else that puts bytes in a file is forbidden while the reconcile is owed,
+   exactly as `Edit` is. The PreToolUse guard mechanically blocks a closed list of those
+   shapes, and that list is incomplete BY CONSTRUCTION — a path built from a variable, an
+   `eval`, a script invoked by name, an interpreter given inline source all pass it. Passing
+   the check is not permission; this line is the obligation and the check is only its backstop.
 4. **Honcho** — on every PUSH and POP, also write a one-line memory to Honcho
    ("paused X for Y" / "resumed X, reconciled vs Y") so the relationship survives outside
    this repo. `push-detour` prints the PUSH line for you and logs it to
@@ -98,6 +107,20 @@ measured across one audited repository, a rule carried by a mandatory task secti
    that strips one holder and not its siblings leaves a dangling reference — the record
    rendering a pointer to something that no longer exists — and it is invisible to both
    gates for the same diff-scoped reason.
+   AN OPERATION HAS AN INVERSE, and the sweep above cannot reach it. For every operation
+   this change adds or modifies, enumerate that inverse — set against unset, add against
+   remove, append against replace, enable against disable, grant against revoke — then
+   name and justify each inverse that is not shipped, exactly as an unguarded call site
+   must be. An operation shipped without its inverse, and not justified, is a FINDING.
+   The reason the sweep cannot reach this class is mechanical rather than a matter of
+   diligence: enumerating the callers of a thing that is written never leads to the
+   question of whether it can be unwritten. Measured here, six instances shipped past both
+   gates while the call-site obligation was already in force, and the most consequential
+   was a safety surface: pre-authorization grants accumulated with no revoke, so turning
+   autonomy off left every prior grant intact and turning it back on silently restored
+   all of them. It was closed by shipping the inverse — `set-autonomy <id> --revoke` — and
+   the evidence is kept rather than deleted, because a practice recorded without what went
+   wrong to earn it reads as a preference.
 2. **Verify against the commit, not the working tree.** The commit is the unit of verification.
    Reading a file in the working tree is NOT verification. For every task, run
    `git show --stat <that task's sha>` and assert that
@@ -126,13 +149,14 @@ measured across one audited repository, a rule carried by a mandatory task secti
    `update-epic <id> --attribute-commit <sha>`. The engine infers attribution from NOTHING —
    not the files a commit touches, not an epic id in a message — so an unrecorded commit is
    a commit the epic's Gate 2 cannot be checked against. The per-task conventional commit of
-   an OpenSpec apply loop always qualifies. Work already in flight is covered too, but ONLY
-   BEFORE the first attribution: catch up in the order the commits landed, then keep
-   attributing forward. The array is append-only — the engine neither reorders nor
-   de-duplicates it — so catching up AFTER attributing forward leaves an ancestor as the
-   last entry, and the LAST entry is the endpoint a recorded Gate 2 `headSha` is compared
-   against. If forward attribution has already begun, attribute forward only and say so;
-   a wrong endpoint reads as a stale verdict and refuses the archive.
+   an OpenSpec apply loop always qualifies. Work already in flight is covered too: catch up
+   in the order the commits landed, then keep attributing forward. Each value is resolved
+   when it is written and stored as its full object name — `HEAD` or a tag records the
+   commit it names at that moment, and a value that is not a commit in this clone is
+   refused with nothing written. The array is append-only — the engine neither reorders nor
+   de-duplicates it — and every attributed commit must be reached by a recorded Gate 2
+   `headSha` (equal to that head or an ancestor of it), whatever position it holds: one the reviewed
+   head does not reach reads as a stale verdict and refuses the archive.
    ONE EXCLUSION, and it is not a judgment call: the commit that moves
    `openspec/changes/<id>/` under `archive/`, and any commit that only relocates or deletes a
    change's artifacts rather than implementing its work, is lifecycle bookkeeping and
@@ -161,8 +185,9 @@ measured across one audited repository, a rule carried by a mandatory task secti
    exclusion ENDS by recording a terminal disposition carrying its required reason, and
    never by removing the record. The archive verb takes TWO halves in ONE invocation — the
    disposition AND a deferral assertion — because the gate refuses either half alone:
-   `update-epic <id> --status archived --outcome delivered|killed|superseded|abandoned|declined --reason "<why>" --no-deferrals`
-   (every outcome except `delivered` requires the reason). `--no-deferrals` is the explicit
+   `update-epic <id> --status archived --outcome delivered|killed|superseded|abandoned|declined|unreconstructable --reason "<why>" --no-deferrals`
+   (every outcome except `delivered` requires the reason; for an openspec-lane epic, `delivered` also needs a passing Gate 2,
+   and `unconsidered-outcomes` or the archive gate's refusal names the review to record first). `--no-deferrals` is the explicit
    "there are none" and is a claim, not a default — swap it for `--deferral
    "<epicId>:<artifact section>"` where work is now held by a registered epic, or
    `--declined-deferral "<what>:<why not>"` where you are deliberately not doing it; both
@@ -256,8 +281,9 @@ DO: a brevity contract shortens prose, it does not authorise skipping a required
 gate, or a recorded disposition.
 
 1. **A recorded fact is not output, and no contract shortens it.** `--outcome` and its
-   `--reason`, `--no-deferrals` or the deferrals it stands in for, a gate verdict,
-   `--attribute-commit`, `--notify`, `record-reconcile`, `record-cross-spec-review` — these
+   `--reason`, `--no-deferrals` or the deferrals it stands in for, a gate verdict or its
+   withdrawal (`--withdraw-gate-review`), `--attribute-commit` or `--withdraw-commit`,
+   `--notify`, `record-reconcile`, `record-cross-spec-review` — these
    are WRITES to `.conductor/state.json`, not sentences. Applying a communication preference
    to one is data loss, not brevity.
 2. **A report another AGENT reads back is a wire format and does not bend.** The
@@ -309,7 +335,11 @@ shared branch); those are out of scope regardless of autonomy level.
    order, before treating it as a stop:
    a. Already pre-authorized in the preflight — either an exact `action` match or the
       action falls under a granted `category` (per the category heuristic)? → proceed,
-      record via `--notify`.
+      record via `--notify`. A REVOKED grant covers NOTHING, and neither does a grant that
+      names nothing — an empty action or category, which a state file written before the
+      revoke shipped can still hold and which no `--revoke` can name. Both authorise nothing
+      whatever the level says, and `set-autonomy <id> --level autonomous` prints the live
+      grants it is arming so you can read what is actually in force.
    b. No backup/restore path exists? → STOP regardless of autonomy level.
    c. Destructive but restorable (backed up first)? → WARN — `--notify` it immediately, proceed.
    d. No context to act on? → STOP — a real gap, not a false stall.
