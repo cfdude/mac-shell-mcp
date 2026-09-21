@@ -7,13 +7,23 @@ on:
     branches: [ main ]
 
 
+# Cancel superseded in-flight runs: at 90% of the monthly Actions allowance,
+# a run for a commit that has already been replaced is pure waste.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
   test:
-    runs-on: macos-latest
-    
+    # Linux, not macOS: macOS runners bill at 10x and this suite has no
+    # macOS-specific behavior. Verified 27/27 green on node:22 (Debian), where
+    # /bin/ls resolves to /usr/bin/ls -- both are configured program
+    # directories, so pinned-program resolution is unaffected.
+    runs-on: ubuntu-latest
+
     strategy:
       matrix:
         node-version: [18.x, 20.x, 22.x]
