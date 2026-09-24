@@ -98,7 +98,7 @@ Policy is found in this order, first match wins, never merged:
 
 ## Security
 
-The policy file, its parent directories, your program directories, and the whole audit log directory are **protected locations** — the server refuses to modify any of them, judged by the operation a request performs rather than by a command's declared effect. This is enforced in code, keyed on filesystem identity rather than path strings, and cannot be switched off from the policy file.
+The policy file, its parent directories, your program directories, and the whole audit log directory are **protected locations**. The default command set contains nothing that writes, so none of them is reachable out of the box. If you add a command that writes (`cp`, `mv`, `rm`, `tee`, `ln`, `chmod`, and a few others, by name), the server refuses any call whose path arguments land on a protected location, matched by filesystem identity as well as by path. That check is keyed on the command's name, not on what an arbitrary program might do: a writing command outside that list is not covered, so add one only if you trust what it can write.
 
 `chmod 444` on your config is worth doing as a second, independent layer. It is not the mechanism: replacing a file needs write permission on its _directory_, not the file.
 

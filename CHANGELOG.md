@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2026-09-24
+
+### Security
+
+- **2.0.0 argument allowlist bypass — upgrade now.** 2.0.0 read a fused short-flag group such as `-iS` as the permitted flag `-i` carrying a value `S`, so any disallowed flag could ride behind a permitted one. With the default policy, `grep -iS` (follow symlinks) read files outside the configured roots through a symlink inside them, and `ls -lRL` did the same for listings. A second fault let any command with an empty allowlist accept every argument (`pwd anything`). Every letter of a fused group must now be individually allowed; only a flag that takes a value for that command (`head -n2`) may carry one, and only a number. A test enumerates every default command against every flag letter and fused shape.
+
+### Changed
+
+- README: the protected-location guarantee is stated as what it is — a name-keyed list of writing commands — rather than as operation-based protection.
+
 ## [2.0.0] - 2026-08-29
 
 ### Security

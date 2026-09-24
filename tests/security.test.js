@@ -205,6 +205,99 @@ describe('argument allowlists', () => {
   });
 });
 
+describe('fused short flags (2.0.1 regression)', () => {
+  test('a fused flag group cannot smuggle a disallowed flag', async () => {
+    const { svc, root, base } = makeService();
+    cleanup.push(base);
+    const outside = join(base, 'out');
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(join(outside, 'secret.txt'), 'AKIA-SECRET\n');
+    symlinkSync(outside, join(root, 'lnk'));
+    // -iS was read as flag -i carrying value "S"; -S follows symlinks out of the root
+    await expect(
+      svc.execute('execute_command', 'grep', ['-iS', '-r', 'AKIA'], { cwd: root }),
+    ).rejects.toThrow(/not permitted for/);
+    await expect(
+      svc.execute('execute_command', 'grep', ['-iR', 'AKIA'], { cwd: root }),
+    ).rejects.toThrow(/not permitted for/);
+  });
+
+  test('a fused group of allowed flags is accepted', async () => {
+    const { svc, root, base } = makeService();
+    cleanup.push(base);
+    writeFileSync(join(root, 'f.txt'), 'Hello\n');
+    const r = await svc.execute('execute_command', 'grep', ['-in', 'hello', join(root, 'f.txt')], {
+      cwd: root,
+    });
+    expect(r.stdout.trim()).toBe('1:Hello');
+  });
+
+  test('a value-taking flag accepts a fused numeric value only', async () => {
+    const { svc, root, base } = makeService();
+    cleanup.push(base);
+    writeFileSync(join(root, 'f.txt'), 'a\nb\nc\n');
+    const r = await svc.execute('execute_command', 'head', ['-n2', join(root, 'f.txt')], {
+      cwd: root,
+    });
+    expect(r.stdout.trim()).toBe('a\nb');
+    await expect(
+      svc.execute('execute_command', 'head', ['-nX', join(root, 'f.txt')], { cwd: root }),
+    ).rejects.toThrow(/not permitted for/);
+  });
+
+  test('a command declaring no argument shapes accepts no operands either', async () => {
+    const { svc, root, base } = makeService();
+    cleanup.push(base);
+    await expect(
+      svc.execute('execute_command', 'pwd', ['anything'], { cwd: root }),
+    ).rejects.toThrow(/not permitted for/);
+  });
+});
+
+describe('flag allowlist — the fused-flag class, enumerated', () => {
+  test('ls -lRL cannot recurse or follow links (read as -l carrying value RL in 2.0.0)', async () => {
+    const { svc, root, base } = makeService();
+    cleanup.push(base);
+    await expect(svc.execute('execute_command', 'ls', ['-lRL'], { cwd: root })).rejects.toThrow(
+      /not permitted for/,
+    );
+  });
+
+  test('no disallowed letter passes in any position, for every default command', async () => {
+    const { svc, root, base } = makeService();
+    cleanup.push(base);
+    const letters = [...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'];
+    const valueFlags = { head: ['-n', '-c'], tail: ['-n', '-c'], grep: ['-A', '-B', '-C'] };
+    let checked = 0;
+    const leaks = [];
+    for (const [cmd, entry] of Object.entries(DEFAULT_COMMANDS)) {
+      const allowed = new Set(entry.allowedArgs);
+      const vf = valueFlags[cmd] ?? [];
+      const bools = [...allowed].filter((f) => /^-[A-Za-z]$/.test(f) && !vf.includes(f));
+      const a = bools[0]?.[1];
+      const b = bools[1]?.[1] ?? a;
+      for (const c of letters) {
+        if (allowed.has(`-${c}`)) continue;
+        const shapes = [`-${c}`];
+        if (a) shapes.push(`-${a}${c}`, `-${c}${a}`, `-${a}${c}${b}`);
+        if (vf[0] && allowed.has(vf[0])) shapes.push(`${vf[0]}${c}`, `${vf[0]}5${c}`);
+        for (const shape of shapes) {
+          if (/^-[A-Za-z]\d+$/.test(shape) && vf.includes(shape.slice(0, 2))) continue; // legit -n5
+          try {
+            await svc.execute('execute_command', cmd, [shape], { cwd: root });
+            leaks.push(`${cmd} ${shape}`);
+          } catch (e) {
+            if (!/not permitted for/.test(e.message)) leaks.push(`${cmd} ${shape}: ${e.message}`);
+          }
+          checked += 1;
+        }
+      }
+    }
+    expect(leaks).toEqual([]);
+    expect(checked).toBeGreaterThan(1000);
+  });
+});
+
 describe('results', () => {
   test('a non-zero exit is a normal result, not an error', async () => {
     const { svc, root, base } = makeService();
@@ -233,7 +326,8 @@ describe('pipelines', () => {
     const { svc, root, base } = makeService({
       commands: {
         ...DEFAULT_COMMANDS,
-        tee: { program: '/usr/bin/tee', effect: 'write', allowedArgs: [], permission: 'allow' },
+        // allowedArgs non-empty so the read-effect rule, not the no-arguments rule, is what refuses
+        tee: { program: '/usr/bin/tee', effect: 'write', allowedArgs: ['-a'], permission: 'allow' },
       },
     });
     cleanup.push(base);
