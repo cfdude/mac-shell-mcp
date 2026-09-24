@@ -48,6 +48,13 @@ const WRITE_OPERATIONS = new Set([
   'truncate',
 ]);
 
+/** Flags that take a value, per command. The same letter can be boolean elsewhere. */
+const VALUE_FLAGS: Record<string, string[]> = {
+  head: ['-n', '-c'],
+  tail: ['-n', '-c'],
+  grep: ['-A', '-B', '-C'],
+};
+
 export class CommandService {
   private readonly policy: Policy;
   private readonly protectedSet: ProtectedSet;
@@ -142,7 +149,7 @@ export class CommandService {
     // Every supplied argument must match at least one permitted shape,
     // independent of position. A command declaring none accepts none.
     for (const arg of args) {
-      if (!this.argPermitted(arg, entry.allowedArgs, args, cwd)) {
+      if (!this.argPermitted(command, arg, entry.allowedArgs)) {
         this.deny(
           tool,
           command,
@@ -216,16 +223,29 @@ export class CommandService {
     return { program, effect: entry.effect };
   }
 
-  private argPermitted(arg: string, allowed: string[], allArgs: string[], cwd: string): boolean {
+  /**
+   * Every argument must match the allowlist exactly, independent of position.
+   *
+   * A fused short-flag group (`-in`) is expanded and EVERY letter must be allowed:
+   * reading `-iS` as flag `-i` carrying a value `S` let a disallowed `-S` through.
+   * Only a flag that genuinely takes a value for THIS command may carry a fused
+   * value, and only a numeric one (`-n2` for head) -- the same letter is boolean
+   * for grep. A command declaring no arguments accepts no operands either.
+   */
+  private argPermitted(command: string, arg: string, allowed: string[]): boolean {
+    if (allowed.length === 0) return false;
     if (allowed.includes(arg)) return true;
-    // a value belonging to a preceding option, or a path operand
-    if (!arg.startsWith('-')) {
-      return pathCandidates([arg], cwd).length > 0 || /^\d+$/.test(arg) || allArgs.length > 0;
-    }
-    // -n5 style
-    const m = /^(-[A-Za-z])(.+)$/.exec(arg);
-    if (m && allowed.includes(m[1])) return true;
-    return false;
+    if (!arg.startsWith('-') || arg === '-') return true; // operand: scope-checked separately
+    if (arg.startsWith('--')) return false; // long flags: exact match only
+    const valueFlags = VALUE_FLAGS[command] ?? [];
+    const head = arg.slice(0, 2);
+    const rest = arg.slice(2);
+    if (valueFlags.includes(head) && allowed.includes(head)) return /^\d+$/.test(rest);
+    // a clustered group of boolean flags: each letter must be individually allowed
+    return [...arg.slice(1)].every((c) => {
+      const flag = `-${c}`;
+      return allowed.includes(flag) && !valueFlags.includes(flag);
+    });
   }
 
   async execute(
