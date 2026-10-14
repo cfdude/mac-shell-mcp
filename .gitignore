@@ -39,3 +39,4 @@ dist/
 .conductor/write-conflicts.log.prev
 .conductor/honcho-memories.log
 .conductor/brief.txt
+.conductor/spend/

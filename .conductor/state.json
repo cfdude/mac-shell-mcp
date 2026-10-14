@@ -164,8 +164,8 @@
     }
   ],
   "detourStack": [],
-  "revision": 55,
+  "revision": 56,
   "archiveBackfilledAt": "2026-08-28T22:45:37.558Z",
-  "pmVersion": "0.51.0",
+  "pmVersion": "0.52.0",
   "platform": "claude-code"
 }

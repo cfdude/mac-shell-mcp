@@ -361,7 +361,7 @@ shared branch); those are out of scope regardless of autonomy level.
 
 How intensely to review, which model and effort each job role runs on, and how often you report.
 Each field resolves independently, most specific first: the epic's own value, else its lane's,
-else the project's, else the default (review `standard`, verbosity `quiet`, no model directive).
+else the project's, else the built-in default (review `standard`, verbosity `quiet`, and per model role: plan opus (high), implement sonnet (medium), test sonnet (low), review opus (high), mechanical sonnet (low), rudimentary haiku).
 Set the project or a lane with `set-profile` (every set has an `--unset`); an epic sets its own
 through `add-epic`, `add-many` or `update-epic`; `profile` prints the effective values with the layer each came from
 (pass its `--epic` flag for one epic). The engine records and emits the profile — it never
@@ -370,15 +370,21 @@ dispatches an agent or checks which model ran.
 Project values:
 - review: standard (default)
 - verbosity: quiet (default)
-- model implement: no directive (default)
-- model test: no directive (default)
-- model review: no directive (default)
+- model plan: opus (high) (default)
+- model implement: sonnet (medium) (default)
+- model test: sonnet (low) (default)
+- model review: opus (high) (default)
+- model mechanical: sonnet (low) (default)
+- model rudimentary: haiku (default)
 
 Lane overrides: none.
 
-**Before dispatching a job** (implementing, testing, reviewing), resolve the active epic's
+**Before dispatching a job** (plan, implement, test, review, mechanical, rudimentary), resolve the active epic's
 profile and run that job's role on its `{model, effort}` where your platform lets you set them
 per dispatch. Where it does not, say so rather than implying it was applied.
+
+**One-shot build.** To have a top-tier model build an epic straight off its finished plan, set
+`--model implement=fable:<effort>` on that epic: an override of `implement`, not a separate role.
 
 **Verbosity:** `quiet` — one completion message per epic; `verbose` — a message at each phase
 transition and gate.
