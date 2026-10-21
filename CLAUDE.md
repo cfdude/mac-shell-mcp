@@ -158,7 +158,8 @@ measured across one audited repository, a rule carried by a mandatory task secti
    `headSha` (equal to that head or an ancestor of it), whatever position it holds: one the reviewed
    head does not reach reads as a stale verdict and refuses the archive.
    ONE EXCLUSION, and it is not a judgment call: the commit that moves
-   `openspec/changes/<id>/` under `archive/`, and any commit that only relocates or deletes a
+   the change's directory (`changeRoot` from `openspec status --change <id> --json`) into its archive,
+   and any commit that only relocates or deletes a
    change's artifacts rather than implementing its work, is lifecycle bookkeeping and
    MUST NOT be attributed. That move lands after the reviewed range by construction, so
    attributing it
