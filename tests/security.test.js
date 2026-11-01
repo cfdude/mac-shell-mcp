@@ -9,9 +9,27 @@ import {
   realpathSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { CommandService, DeniedError } from '../build/services/command-service.js';
 import { DEFAULT_COMMANDS, EXCLUDED_BY_DEFAULT } from '../build/policy.js';
+
+/**
+ * Program directories for the fixture. The guard resolves each pinned program with
+ * realpath and requires the result to sit inside a configured program directory. On
+ * hosts where /bin/cat is a symlink into another tree (e.g. Ubuntu runners shipping
+ * uutils coreutils at /usr/lib/cargo/bin/coreutils), the resolved path is legitimately
+ * elsewhere. The fixture therefore adds the resolved directory of each pinned default
+ * program. The production allowlist and the guard are unchanged.
+ */
+const PROGRAM_DIRECTORIES = [
+  ...new Set([
+    '/usr/bin',
+    '/bin',
+    '/usr/sbin',
+    '/sbin',
+    ...Object.values(DEFAULT_COMMANDS).map((c) => dirname(realpathSync(c.program))),
+  ]),
+];
 
 /** Build an isolated policy over a throwaway root. */
 function makeService(overrides = {}) {
@@ -21,7 +39,7 @@ function makeService(overrides = {}) {
   const policy = {
     allowedRoots: [root],
     roots: [root],
-    programDirectories: ['/usr/bin', '/bin', '/usr/sbin', '/sbin'],
+    programDirectories: PROGRAM_DIRECTORIES,
     commands: DEFAULT_COMMANDS,
     deniedCommands: [],
     auditLogDir: join(base, 'audit'),
