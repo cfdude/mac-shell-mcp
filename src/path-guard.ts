@@ -1,4 +1,12 @@
-import { accessSync, constants, lstatSync, realpathSync, statSync } from 'node:fs';
+import {
+  type Stats,
+  accessSync,
+  constants,
+  lstatSync,
+  readlinkSync,
+  realpathSync,
+  statSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import type { Policy } from './policy.js';
@@ -182,33 +190,139 @@ export class ProtectedSet {
 }
 
 /**
- * Program directories must have no unprivileged write path. Tested by ownership
- * and mode rather than "writable by me", which would refuse every system
- * directory when the server runs privileged, as in a container.
+ * Why `st`, at path `p`, gives an unprivileged user a way to write, or null.
+ * The privileged owner is root (uid 0) and the privileged group is gid 0. World
+ * write is always a write path; group write is one unless the group is gid 0;
+ * ownership by any other uid is one, since an owner can always change the mode.
+ * Judged by ownership and mode rather than "writable by me", which would refuse
+ * every system directory when the server runs privileged, as in a container.
  */
-export function programDirIsSafe(dir: string): { safe: boolean; reason?: string } {
-  let cur = resolve(expandHome(dir));
+function unprivilegedWriter(st: Stats, p: string): string | null {
+  if ((st.mode & 0o002) !== 0) return `${p} is world-writable`;
+  if (st.uid !== 0) return `${p} is owned by uid ${st.uid}, not root`;
+  if ((st.mode & 0o020) !== 0 && st.gid !== 0) {
+    return `${p} is group-writable by gid ${st.gid}, not a privileged group`;
+  }
+  return null;
+}
+
+/** Absence is reported as absence; any other failure under its own cause. Both refuse. */
+function statFailure(p: string, e: unknown): string {
+  const code = (e as NodeJS.ErrnoException).code;
+  if (code === 'ENOENT' || code === 'ENOTDIR') return `${p} does not exist`;
+  return `${p} cannot be inspected (${code ?? String(e)})`;
+}
+
+/**
+ * The first entry on the way to `p` that an unprivileged user could change, or
+ * null. Covers `p` itself, every ancestor, and — for each symbolic link met on
+ * the way — the link's target and the target's ancestors, since whoever can
+ * write the directory holding a link, or any directory it passes through, can
+ * redirect it.
+ */
+function firstWritePath(p: string, seen: Set<string> = new Set()): string | null {
+  let cur = p;
   for (;;) {
-    let st;
-    try {
-      st = statSync(cur);
-    } catch {
-      return { safe: false, reason: `${cur} does not exist` };
-    }
-    const worldOrGroupWritable = (st.mode & 0o022) !== 0;
-    if (worldOrGroupWritable && st.uid !== 0) {
-      return { safe: false, reason: `${cur} is writable other than by a privileged owner` };
+    if (!seen.has(cur)) {
+      seen.add(cur);
+      let st: Stats;
+      try {
+        st = lstatSync(cur);
+      } catch (e) {
+        return statFailure(cur, e);
+      }
+      let why: string | null;
+      if (st.isSymbolicLink()) {
+        // A link's mode is never consulted: it is replaced through its parent,
+        // which this walk reaches next. What it names is followed here, resolved
+        // as the kernel does, from the parent's REAL path, since the parent as
+        // written may itself pass through a link.
+        let from: string;
+        try {
+          from = realpathNative(dirname(cur));
+        } catch {
+          return `${dirname(cur)} does not resolve`;
+        }
+        let target: string;
+        try {
+          target = readlinkSync(cur);
+        } catch (e) {
+          return statFailure(cur, e);
+        }
+        why = firstWritePath(resolve(from, target), seen);
+        // A link is held to the ownership rule as well, after what it names.
+        why ??= st.uid !== 0 ? `${cur} is a link owned by uid ${st.uid}, not root` : null;
+      } else {
+        why = unprivilegedWriter(st, cur);
+      }
+      if (why) return why;
     }
     const parent = dirname(cur);
-    if (parent === cur) return { safe: true };
+    if (parent === cur) return null;
     cur = parent;
   }
 }
 
+/** A program directory is safe only where no unprivileged write path reaches it. */
+export function programDirIsSafe(dir: string): { safe: boolean; reason?: string } {
+  const abs = resolve(expandHome(dir));
+  let st: Stats;
+  try {
+    st = statSync(abs);
+  } catch (e) {
+    return { safe: false, reason: statFailure(abs, e) };
+  }
+  if (!st.isDirectory()) return { safe: false, reason: `${abs} is not a directory` };
+  const why = firstWritePath(abs);
+  return why ? { safe: false, reason: `unprivileged write path: ${why}` } : { safe: true };
+}
+
+export interface ProgramDirSafety {
+  /** Resolved paths of the directories programs may be resolved from. */
+  safe: string[];
+  /** Configured directories that are not used, with why. */
+  unsafe: { dir: string; reason: string; real?: string }[];
+}
+
+/**
+ * The single verdict on the configured program directories. Both the startup
+ * report and every resolution read it, so the two cannot disagree.
+ */
+export function programDirSafety(policy: Pick<Policy, 'programDirectories'>): ProgramDirSafety {
+  const out: ProgramDirSafety = { safe: [], unsafe: [] };
+  for (const dir of policy.programDirectories) {
+    const verdict = programDirIsSafe(dir);
+    let real: string | undefined;
+    try {
+      real = realpathNative(resolve(expandHome(dir)));
+    } catch {
+      real = undefined;
+    }
+    if (verdict.safe && real) out.safe.push(real);
+    else out.unsafe.push({ dir, reason: verdict.reason ?? `${dir} does not resolve`, real });
+  }
+  return out;
+}
+
+/** The startup report: one line per configured program directory that is not used. */
+export function programDirWarnings(policy: Pick<Policy, 'programDirectories'>): string[] {
+  return programDirSafety(policy).unsafe.map(
+    (u) => `program directory ${u.dir} will not be used: ${u.reason}`,
+  );
+}
+
 /** Resolve a command to a pinned, safe program. Never matched by basename. */
-export function resolveProgram(name: string, pinned: string, policy: Policy): { program: string } {
+export function resolveProgram(
+  name: string,
+  pinned: string,
+  policy: Pick<Policy, 'programDirectories' | 'roots'>,
+): { program: string } {
   if (name.includes('/')) {
     throw new GuardError(`Command must be a bare name, not a path: ${name}`);
+  }
+  // A relative pin would resolve against whatever the process cwd happens to be.
+  if (!isAbsolute(pinned)) {
+    throw new GuardError(`Program for '${name}' must be pinned by absolute path, not ${pinned}`);
   }
   let real: string;
   try {
@@ -216,17 +330,27 @@ export function resolveProgram(name: string, pinned: string, policy: Policy): { 
   } catch {
     throw new GuardError(`Program for '${name}' is not present at ${pinned}`);
   }
-  if (real !== realpathNativeSafe(pinned)) {
-    throw new GuardError(`Program for '${name}' did not resolve to its pinned path`);
-  }
-  const dirs = policy.programDirectories.map((d) => resolve(expandHome(d)));
-  if (!dirs.some((d) => within(real, d))) {
-    throw new GuardError(`Program ${real} is outside the configured program directories`);
-  }
   if (policy.roots.some((r) => within(real, r))) {
     throw new GuardError(
       `Program ${real} resolves inside a configured root; roots hold data, never code`,
     );
+  }
+  // The pinned path and every link it passes through, then the file that is
+  // actually executed and its real directory chain.
+  const why = firstWritePath(pinned) ?? firstWritePath(real);
+  if (why) {
+    throw new GuardError(`Program for '${name}' has an unprivileged write path: ${why}`);
+  }
+  // Confinement is tested on the RESOLVED path, against safe directories only.
+  const { safe, unsafe } = programDirSafety(policy);
+  if (!safe.some((d) => within(real, d))) {
+    const blocked = unsafe.find((u) => u.real !== undefined && within(real, u.real));
+    if (blocked) {
+      throw new GuardError(
+        `Program ${real} lies in program directory ${blocked.dir}, which is not used: ${blocked.reason}`,
+      );
+    }
+    throw new GuardError(`Program ${real} is outside the configured program directories`);
   }
   try {
     accessSync(real, constants.X_OK);
@@ -234,12 +358,4 @@ export function resolveProgram(name: string, pinned: string, policy: Policy): { 
     throw new GuardError(`Program ${real} is not executable`);
   }
   return { program: real };
-}
-
-function realpathNativeSafe(p: string): string {
-  try {
-    return realpathNative(p);
-  } catch {
-    return p;
-  }
 }
