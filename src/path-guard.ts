@@ -224,11 +224,22 @@ function firstWritePath(p: string, seen: Set<string> = new Set()): string | null
       } catch {
         return `${cur} does not exist`;
       }
-      // A link's own mode is never consulted; it is replaced through its
-      // parent, which this walk reaches next, and what it names is followed here.
-      const why = st.isSymbolicLink()
-        ? firstWritePath(resolve(dirname(cur), readlinkSync(cur)), seen)
-        : unprivilegedWriter(st, cur);
+      let why: string | null;
+      if (st.isSymbolicLink()) {
+        // A link's own mode is never consulted: it is replaced through its parent,
+        // which this walk reaches next. What it names is followed here, resolved
+        // as the kernel does, from the parent's REAL path, since the parent as
+        // written may itself pass through a link.
+        let from: string;
+        try {
+          from = realpathNative(dirname(cur));
+        } catch {
+          return `${dirname(cur)} does not resolve`;
+        }
+        why = firstWritePath(resolve(from, readlinkSync(cur)), seen);
+      } else {
+        why = unprivilegedWriter(st, cur);
+      }
       if (why) return why;
     }
     const parent = dirname(cur);
@@ -309,8 +320,9 @@ export function resolveProgram(
       `Program ${real} resolves inside a configured root; roots hold data, never code`,
     );
   }
-  // The pinned path, every link it passes through, and the file itself.
-  const why = firstWritePath(pinned);
+  // The pinned path and every link it passes through, then the file that is
+  // actually executed and its real directory chain.
+  const why = firstWritePath(pinned) ?? firstWritePath(real);
   if (why) {
     throw new GuardError(`Program for '${name}' has an unprivileged write path: ${why}`);
   }

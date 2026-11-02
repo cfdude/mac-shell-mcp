@@ -9,7 +9,7 @@ import {
   realpathSync,
   chmodSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { CommandService, DeniedError } from '../build/services/command-service.js';
 import * as guard from '../build/path-guard.js';
@@ -315,6 +315,49 @@ describe('program directory safety', () => {
       new RegExp(`unprivileged write path: ${prog} is world-writable`),
     );
   });
+
+  test('a relative link under a linked parent is judged where the kernel resolves it', () => {
+    // base/L -> base/a/real, and base/a/real/rel -> ../t. The kernel resolves
+    // base/L/rel to base/a/t; read against the parent as written it would be base/t.
+    const base = tempBase();
+    const a = join(base, 'a');
+    mkdirSync(join(a, 'real'), { recursive: true });
+    const t = dirWithMode(a, 't', 0o777);
+    symlinkSync(join(a, 'real'), join(base, 'L'));
+    symlinkSync('../t', join(a, 'real', 'rel'));
+    expect(guard.programDirIsSafe(join(base, 'L', 'rel')).reason).toContain(
+      `${t} is world-writable`,
+    );
+  });
+
+  // Needs a root-owned directory with a safe chain, which only root can create.
+  (isRoot ? test : test.skip)(
+    'a program reached through a safe directory into an unsafe one is refused (root only: needs a root-owned directory)',
+    () => {
+      const safeDir = realpathSync(mkdtempSync(join(homedir(), 'msm-pd-')));
+      cleanup.push(safeDir);
+      chmodSync(safeDir, 0o755);
+      expect({ safeDir, ...guard.programDirIsSafe(safeDir) }).toEqual({ safeDir, safe: true });
+      // safeDir/L -> safeDir/deep/real; safeDir/deep/real/tool -> ../sub/tool, which the
+      // kernel resolves to safeDir/deep/sub/tool, inside a world-writable directory.
+      const deep = join(safeDir, 'deep');
+      mkdirSync(join(deep, 'real'), { recursive: true });
+      chmodSync(deep, 0o755);
+      chmodSync(join(deep, 'real'), 0o755);
+      const sub = dirWithMode(deep, 'sub', 0o777);
+      const prog = executable(sub);
+      symlinkSync(join(deep, 'real'), join(safeDir, 'L'));
+      symlinkSync('../sub/tool', join(deep, 'real', 'tool'));
+      const pinned = join(safeDir, 'L', 'tool');
+      expect(() => guard.resolveProgram('tool', pinned, onlyDirs([safeDir]))).toThrow(
+        new RegExp(`unprivileged write path: ${sub} is world-writable`),
+      );
+      // the same file pinned directly is refused too
+      expect(() => guard.resolveProgram('tool', prog, onlyDirs([safeDir]))).toThrow(
+        /unprivileged write path/,
+      );
+    },
+  );
 
   test('a program pinned by a relative path is refused', () => {
     expect(() => guard.resolveProgram('ls', 'bin/ls', onlyDirs(PROGRAM_DIRECTORIES))).toThrow(
