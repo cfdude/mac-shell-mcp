@@ -295,6 +295,10 @@ describe('program directory safety', () => {
     expect(() =>
       guard.resolveProgram('head', join(link, basename(realHead)), onlyDirs([link])),
     ).toThrow(/unprivileged write path/);
+    // pinned by its real, safe path, it is still not resolved from the unsafe directory
+    expect(() => guard.resolveProgram('head', realHead, onlyDirs([link]))).toThrow(
+      new RegExp(`lies in program directory ${link}, which is not used: unprivileged write path`),
+    );
   });
 
   test('a pinned program reached through a link in a writable directory is refused', () => {
@@ -404,11 +408,44 @@ describe('program directory safety', () => {
     expect(svc.unsafeProgramDirs()).toEqual([ww, missing]);
   });
 
-  test('the server logs the same verdict the guard enforces', async () => {
-    const { readFileSync } = await import('node:fs');
-    const src = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
-    expect(src).toMatch(/programDirWarnings\(/);
-    expect(src).not.toMatch(/programDirIsSafe\(/);
+  test('the server logs, at startup, the same verdict the guard enforces', async () => {
+    const { spawn } = await import('node:child_process');
+    const base = tempBase();
+    const root = join(base, 'root');
+    mkdirSync(root);
+    const ww = dirWithMode(base, 'ww', 0o777);
+    const programDirectories = [...PROGRAM_DIRECTORIES, ww];
+    const config = join(base, 'config.json');
+    writeFileSync(
+      config,
+      JSON.stringify({
+        allowedRoots: [root],
+        programDirectories,
+        auditLogDir: join(base, 'audit'),
+      }),
+    );
+    const server = new URL('../build/index.js', import.meta.url).pathname;
+    const stderr = await new Promise((resolveOut, reject) => {
+      const child = spawn(process.execPath, [server], {
+        env: { ...process.env, MAC_SHELL_MCP_CONFIG: config },
+        stdio: ['pipe', 'ignore', 'pipe'],
+      });
+      let err = '';
+      const timer = setTimeout(() => child.kill(), 5000);
+      child.stderr.on('data', (d) => {
+        err += d;
+        if (err.includes('running on stdio')) child.kill();
+      });
+      child.on('error', reject);
+      child.on('close', () => {
+        clearTimeout(timer);
+        resolveOut(err);
+      });
+    });
+    const expected = guard.programDirWarnings({ programDirectories });
+    expect(expected).toHaveLength(1);
+    expect(stderr).toContain(`[policy] ${expected[0]}`);
+    expect(stderr.match(/will not be used/g)).toHaveLength(1);
   });
 });
 

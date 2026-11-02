@@ -206,6 +206,13 @@ function unprivilegedWriter(st: Stats, p: string): string | null {
   return null;
 }
 
+/** Absence is reported as absence; any other failure under its own cause. Both refuse. */
+function statFailure(p: string, e: unknown): string {
+  const code = (e as NodeJS.ErrnoException).code;
+  if (code === 'ENOENT' || code === 'ENOTDIR') return `${p} does not exist`;
+  return `${p} cannot be inspected (${code ?? String(e)})`;
+}
+
 /**
  * The first entry on the way to `p` that an unprivileged user could change, or
  * null. Covers `p` itself, every ancestor, and — for each symbolic link met on
@@ -221,12 +228,12 @@ function firstWritePath(p: string, seen: Set<string> = new Set()): string | null
       let st: Stats;
       try {
         st = lstatSync(cur);
-      } catch {
-        return `${cur} does not exist`;
+      } catch (e) {
+        return statFailure(cur, e);
       }
       let why: string | null;
       if (st.isSymbolicLink()) {
-        // A link's own mode is never consulted: it is replaced through its parent,
+        // A link's mode is never consulted: it is replaced through its parent,
         // which this walk reaches next. What it names is followed here, resolved
         // as the kernel does, from the parent's REAL path, since the parent as
         // written may itself pass through a link.
@@ -237,6 +244,8 @@ function firstWritePath(p: string, seen: Set<string> = new Set()): string | null
           return `${dirname(cur)} does not resolve`;
         }
         why = firstWritePath(resolve(from, readlinkSync(cur)), seen);
+        // A link is held to the ownership rule as well, after what it names.
+        why ??= st.uid !== 0 ? `${cur} is a link owned by uid ${st.uid}, not root` : null;
       } else {
         why = unprivilegedWriter(st, cur);
       }
@@ -254,8 +263,8 @@ export function programDirIsSafe(dir: string): { safe: boolean; reason?: string 
   let st: Stats;
   try {
     st = statSync(abs);
-  } catch {
-    return { safe: false, reason: `${abs} does not exist` };
+  } catch (e) {
+    return { safe: false, reason: statFailure(abs, e) };
   }
   if (!st.isDirectory()) return { safe: false, reason: `${abs} is not a directory` };
   const why = firstWritePath(abs);
