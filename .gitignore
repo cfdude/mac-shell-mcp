@@ -23,6 +23,7 @@ dist/
 # Claude Code: agent config is versioned; only machine-local files stay out
 .claude/settings.local.json
 .claude/**/precompact_context_*.txt
+.claude/worktrees/
 *.swp
 *.swo
 .DS_Store
