@@ -7,10 +7,12 @@ import {
   existsSync,
   linkSync,
   realpathSync,
+  chmodSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { CommandService, DeniedError } from '../build/services/command-service.js';
+import * as guard from '../build/path-guard.js';
 import { DEFAULT_COMMANDS, EXCLUDED_BY_DEFAULT } from '../build/policy.js';
 
 /**
@@ -187,7 +189,13 @@ describe('program authorization', () => {
     cleanup.push(base);
     const fake = join(root, 'ls');
     writeFileSync(fake, '#!/bin/sh\necho pwned\n', { mode: 0o755 });
-    const { svc } = makeService({ commands: { ls: { ...DEFAULT_COMMANDS.ls, program: fake } } });
+    // the fake must sit in the root of the service under test, not in another fixture's
+    const { svc, base: b2 } = makeService({
+      commands: { ls: { ...DEFAULT_COMMANDS.ls, program: fake } },
+      allowedRoots: [root],
+      roots: [root],
+    });
+    cleanup.push(b2);
     await expect(svc.execute('execute_command', 'ls', [], { cwd: root })).rejects.toThrow(
       /inside a configured root|outside the configured program directories/,
     );
@@ -199,6 +207,165 @@ describe('program authorization', () => {
     await expect(svc.execute('execute_command', './ls', [], { cwd: root })).rejects.toThrow(
       /not permitted/,
     );
+  });
+});
+
+describe('program directory safety', () => {
+  const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+  const SYSTEM_DIRS = ['/usr/bin', '/bin', '/usr/sbin', '/sbin'];
+
+  /** A real (symlink-free) temp base: macOS tmpdir lives under the /var -> /private/var link. */
+  function tempBase() {
+    const b = realpathSync(mkdtempSync(join(tmpdir(), 'msm-pd-')));
+    cleanup.push(b);
+    return b;
+  }
+
+  function dirWithMode(parent, name, mode) {
+    const d = join(parent, name);
+    mkdirSync(d);
+    chmodSync(d, mode); // explicit: mkdir's mode is masked by umask
+    return d;
+  }
+
+  function executable(dir, name = 'tool') {
+    const p = join(dir, name);
+    writeFileSync(p, '#!/bin/sh\necho ran\n');
+    chmodSync(p, 0o755);
+    return p;
+  }
+
+  const onlyDirs = (dirs) => ({ roots: [], programDirectories: dirs });
+
+  test('a world-writable program directory is refused, not merely reported', async () => {
+    const base = tempBase();
+    const dir = dirWithMode(base, 'ww', 0o777);
+    const prog = executable(dir);
+
+    expect(guard.programDirIsSafe(dir).reason).toContain(`${dir} is world-writable`);
+    expect(() => guard.resolveProgram('tool', prog, onlyDirs([dir]))).toThrow(
+      /unprivileged write path/,
+    );
+
+    const {
+      svc,
+      root,
+      base: b2,
+    } = makeService({
+      programDirectories: [dir],
+      commands: { tool: { program: prog, effect: 'read', allowedArgs: [], permission: 'allow' } },
+    });
+    cleanup.push(b2);
+    await expect(svc.execute('execute_command', 'tool', [], { cwd: root })).rejects.toThrow(
+      /unprivileged write path/,
+    );
+  });
+
+  // Root owns what it creates, and root is the privileged owner, so this case cannot be
+  // built when the suite runs as root.
+  (isRoot ? test.skip : test)(
+    'a program directory owned by an unprivileged user is refused (skipped as root: a root-created directory is privileged)',
+    () => {
+      const base = tempBase();
+      const dir = dirWithMode(base, 'mine', 0o755);
+      const prog = executable(dir);
+      expect(guard.programDirIsSafe(dir).reason).toContain(`${dir} is owned by uid`);
+      expect(() => guard.resolveProgram('tool', prog, onlyDirs([dir]))).toThrow(
+        /unprivileged write path/,
+      );
+    },
+  );
+
+  test('a program directory whose ANCESTOR has an unprivileged write path is refused', () => {
+    // The configured directory is a link, held in a temp dir, to a real system directory.
+    // The target and its own ancestors are safe; only the directory holding the link is
+    // not, and whoever can write there can retarget the link.
+    const base = tempBase();
+    const realHead = realpathSync(DEFAULT_COMMANDS.head.program);
+    const target = dirname(realHead);
+    const link = join(base, 'bin-link');
+    symlinkSync(target, link);
+
+    expect({ target, ...guard.programDirIsSafe(target) }).toEqual({ target, safe: true });
+    const verdict = guard.programDirIsSafe(link);
+    expect(verdict.safe).toBe(false);
+    expect(verdict.reason).not.toContain(target);
+    if (!isRoot) expect(verdict.reason).toContain(base);
+
+    expect(() =>
+      guard.resolveProgram('head', join(link, basename(realHead)), onlyDirs([link])),
+    ).toThrow(/unprivileged write path/);
+  });
+
+  test('a pinned program reached through a link in a writable directory is refused', () => {
+    // Whoever can write the link's directory can point it at any other program.
+    const base = tempBase();
+    const pinned = join(base, 'head');
+    symlinkSync(realpathSync(DEFAULT_COMMANDS.head.program), pinned);
+    expect(() => guard.resolveProgram('head', pinned, onlyDirs(PROGRAM_DIRECTORIES))).toThrow(
+      /unprivileged write path/,
+    );
+  });
+
+  test('a program file with an unprivileged write path is refused', () => {
+    const base = tempBase();
+    const prog = executable(base);
+    chmodSync(prog, 0o777);
+    expect(() => guard.resolveProgram('tool', prog, onlyDirs([base]))).toThrow(
+      new RegExp(`unprivileged write path: ${prog} is world-writable`),
+    );
+  });
+
+  test('a program pinned by a relative path is refused', () => {
+    expect(() => guard.resolveProgram('ls', 'bin/ls', onlyDirs(PROGRAM_DIRECTORIES))).toThrow(
+      /absolute/,
+    );
+  });
+
+  test('the default program directories are safe and every default command resolves', () => {
+    for (const dir of [...SYSTEM_DIRS, ...PROGRAM_DIRECTORIES]) {
+      // the dir is in the expectation so a failure names it and its reason
+      expect({ dir, ...guard.programDirIsSafe(dir) }).toEqual({ dir, safe: true });
+    }
+    for (const [name, c] of Object.entries(DEFAULT_COMMANDS)) {
+      const { program } = guard.resolveProgram(name, c.program, onlyDirs(PROGRAM_DIRECTORIES));
+      expect(program).toBe(realpathSync.native(c.program));
+    }
+    const { svc, base } = makeService();
+    cleanup.push(base);
+    expect(svc.unsafeProgramDirs()).toEqual([]);
+    expect(guard.programDirWarnings(onlyDirs(PROGRAM_DIRECTORIES))).toEqual([]);
+  });
+
+  test('the startup warning names each refused directory with its true reason', () => {
+    const base = tempBase();
+    const ww = dirWithMode(base, 'ww', 0o777);
+    const prog = executable(ww);
+    const missing = join(base, 'missing');
+    const policy = onlyDirs([...PROGRAM_DIRECTORIES, ww, missing]);
+
+    const warnings = guard.programDirWarnings(policy);
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]).toContain(ww);
+    expect(warnings[0]).toMatch(/will not be used/);
+    expect(warnings[0]).toMatch(/world-writable/);
+    expect(warnings[1]).toContain(missing);
+    expect(warnings[1]).toMatch(/does not exist/);
+    expect(warnings[1]).not.toMatch(/write path/);
+
+    // what the warning says will not be used is in fact not used
+    expect(() => guard.resolveProgram('tool', prog, policy)).toThrow(/unprivileged write path/);
+
+    const { svc, base: b2 } = makeService({ programDirectories: policy.programDirectories });
+    cleanup.push(b2);
+    expect(svc.unsafeProgramDirs()).toEqual([ww, missing]);
+  });
+
+  test('the server logs the same verdict the guard enforces', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
+    expect(src).toMatch(/programDirWarnings\(/);
+    expect(src).not.toMatch(/programDirIsSafe\(/);
   });
 });
 

@@ -10,6 +10,7 @@ import {
 import { z } from 'zod';
 import { suggest } from './audit-log.js';
 import { AuditLog } from './audit-log.js';
+import { programDirWarnings } from './path-guard.js';
 import { PolicyError, loadPolicy, type Policy } from './policy.js';
 import { CommandService, DeniedError } from './services/command-service.js';
 
@@ -47,11 +48,8 @@ class MacShellMcpServer {
     console.error(
       `[policy] source: ${policy.source}; roots: ${policy.roots.join(', ') || '(none)'}`,
     );
-    for (const d of this.service.unsafeProgramDirs()) {
-      console.error(
-        `[policy] program directory ${d} has an unprivileged write path and will not be used.`,
-      );
-    }
+    // The same verdict resolveProgram enforces, so the report cannot disagree with it.
+    for (const w of programDirWarnings(policy)) console.error(`[policy] ${w}`);
 
     this.server = new Server(
       { name: 'mac-shell-mcp', version: VERSION },

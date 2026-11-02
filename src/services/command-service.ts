@@ -7,7 +7,7 @@ import {
   classifyScope,
   pathCandidates,
   nearestExisting,
-  programDirIsSafe,
+  programDirSafety,
   resolveProgram,
 } from '../path-guard.js';
 import { type Policy, refusalSuffix } from '../policy.js';
@@ -395,9 +395,9 @@ export class CommandService {
     return last;
   }
 
-  /** Program directories are reported unsafe rather than silently trusted. */
+  /** Configured program directories that resolution refuses; the same verdict it enforces. */
   unsafeProgramDirs(): string[] {
-    return this.policy.programDirectories.filter((d) => !programDirIsSafe(d).safe);
+    return programDirSafety(this.policy).unsafe.map((u) => u.dir);
   }
 
   resolveCwdForTest(given?: string): string {
