@@ -30,7 +30,12 @@
         "932ce733cde07bb30b1f186303e6692dbb5d087a",
         "4f17d3a2ee660170d03d9b8ccfe22274d6bccf65",
         "06f8d46a0743bdcf4f7ac7c4a43e9bbb518a2e0a",
-        "cb8cf9696939aa41a865c34286b639a1301db434"
+        "cb8cf9696939aa41a865c34286b639a1301db434",
+        "4c0b7968e4a19d75b03e0400761b53f5321e23d6",
+        "f84cf7afe3739e8ccdc60f07da97ee50e69b704d",
+        "4313118b3e432d535eb121e7d64779fc51ea15f6",
+        "bbc03445031b2ab9ad6b2aaf1d40976e21a45456",
+        "db0a64055cc47f9569f29ecf110e755b58dafc64"
       ],
       "startedAt": "2026-08-28T22:46:06.110Z",
       "gateReview": {
@@ -43,7 +48,7 @@
         }
       },
       "createdAt": "2026-08-28T15:46:49-07:00",
-      "touchedAt": "2026-11-02T19:18:02.392Z"
+      "touchedAt": "2026-11-02T20:30:50.021Z"
     },
     {
       "id": "npm-name-dispute",
@@ -168,7 +173,7 @@
     }
   ],
   "detourStack": [],
-  "revision": 61,
+  "revision": 66,
   "archiveBackfilledAt": "2026-08-28T22:45:37.558Z",
   "pmVersion": "0.53.0",
   "platform": "claude-code"
