@@ -153,16 +153,21 @@ measured across one audited repository, a rule carried by a mandatory task secti
    in the order the commits landed, then keep attributing forward. Each value is resolved
    when it is written and stored as its full object name — `HEAD` or a tag records the
    commit it names at that moment, and a value that is not a commit in this clone is
-   refused with nothing written. The array is append-only — the engine neither reorders nor
-   de-duplicates it — and every attributed commit must be reached by a recorded Gate 2
+   refused with nothing written. The array is append-only — the engine never reorders it and
+   records each commit once (a repeat is a no-op) — and every attributed commit must be reached by a recorded Gate 2
    `headSha` (equal to that head or an ancestor of it), whatever position it holds: one the reviewed
    head does not reach reads as a stale verdict and refuses the archive.
    ONE EXCLUSION, and it is not a judgment call: the commit that moves
-   `openspec/changes/<id>/` under `archive/`, and any commit that only relocates or deletes a
+   the change's directory (`changeRoot` from `openspec status --change <id> --json`) into its archive,
+   and any commit that only relocates or deletes a
    change's artifacts rather than implementing its work, is lifecycle bookkeeping and
    MUST NOT be attributed. That move lands after the reviewed range by construction, so
    attributing it
-   makes the epic's own Gate 2 stale at the instant the archive gate reads it.
+   makes the epic's own Gate 2 stale at the instant the archive gate reads it. The same holds for
+   the lifecycle commits a required task makes AFTER Gate 2 is recorded (the lessons item 7 routes,
+   the task-list tick): commit them before recording Gate 2 where you can, and do not attribute
+   them where you cannot — the engine says so when an attribution turns the verdict stale, and
+   `--withdraw-commit` undoes it.
 5. **Review a release's specs against each other.** Gate 1 and Gate 2 each take ONE CHANGE
    as their unit, so nothing above them asks whether a release's specs AGREE. Before
    `/opsx:apply` on any release holding two or more spec files — counted FLAT across its
@@ -353,9 +358,39 @@ shared branch); those are out of scope regardless of autonomy level.
    from that log, not from memory), with an explicit "are you OK with these?" checkpoint, THEN
    run tests. Leave room to iterate — including rewriting code — if the user is not satisfied.
 
-## Review mode
+## Execution profile
 
-Review intensity is a bounded dial, not a free-form call each time — set via
+How intensely to review, which model and effort each job role runs on, and how often you report.
+Each field resolves independently, most specific first: the epic's own value, else its lane's,
+else the project's, else the built-in default (review `standard`, verbosity `quiet`, and per model role: plan opus (high), implement sonnet (medium), test sonnet (low), review opus (high), mechanical sonnet (low), rudimentary haiku).
+Set the project or a lane with `set-profile` (every set has an `--unset`); an epic sets its own
+through `add-epic`, `add-many` or `update-epic`; `profile` prints the effective values with the layer each came from
+(pass its `--epic` flag for one epic). The engine records and emits the profile — it never
+dispatches an agent or checks which model ran.
+
+Project values:
+- review: standard (default)
+- verbosity: quiet (default)
+- model plan: opus (high) (default)
+- model implement: sonnet (medium) (default)
+- model test: sonnet (low) (default)
+- model review: opus (high) (default)
+- model mechanical: sonnet (low) (default)
+- model rudimentary: haiku (default)
+
+Lane overrides: none.
+
+**Before dispatching a job** (plan, implement, test, review, mechanical, rudimentary), resolve the active epic's
+profile and run that job's role on its `{model, effort}` where your platform lets you set them
+per dispatch. Where it does not, say so rather than implying it was applied.
+
+**One-shot build.** To have a top-tier model build an epic straight off its finished plan, set
+`--model implement=fable:<effort>` on that epic: an override of `implement`, not a separate role.
+
+**Verbosity:** `quiet` — one completion message per epic; `verbose` — a message at each phase
+transition and gate.
+
+**Review mode.** Review intensity is a bounded dial, not a free-form call each time — set via
 `set-review-mode --mode <off|standard|thorough>` (default: `standard` if never set).
 
 | Mode | Reviewer budget | Trigger |
@@ -365,6 +400,25 @@ Review intensity is a bounded dial, not a free-form call each time — set via
 | `thorough` | two independent fresh-context reviewers per gate; adjudicate any disagreement yourself | schema/migration changes, security-sensitive work, or anything explicitly flagged high-stakes |
 
 Current mode: **standard**.
+
+## Release candidate
+
+Building a release from several changes? Do not run a Gate 2 round per change: batch the work by
+area, merge every worktree branch into ONE candidate branch (`rc/<releaseId>`), review that
+candidate ONCE, and push once. The `release-candidate` skill carries the procedure — load it
+before you start. Two rules to get right without it:
+
+- **The budget is the highest review among the candidate members.** The converged review runs at
+  the highest effective `review` of the members not yet archived that have built work in the
+  range (`thorough` two independent reviewers, `standard` one, `off` your own self-review), so one
+  `thorough` member makes the whole candidate `thorough`.
+- **One round; only a Critical reopens it.** An Important finding is fixed and re-tested, not
+  re-reviewed; a Minor one is logged and never re-reviewed.
+
+Recording: attribute each fix commit to the member whose code it fixes, then record the verdict
+with `record-gate-review` as Gate 2 for EACH candidate member at the SAME base and head, after
+the last fix has merged. A verdict recorded before a fix is stale. `release show` reads whether the
+members converged.
 
 ## Feedback — don't let friction stay silent
 
@@ -393,6 +447,11 @@ what it is FOR. Which source depends on provenance, never on any tracker's direc
 An outward-mirrored epic owes the same look as an inward-born one: a linked item accumulates
 third-party context regardless of which way it was born. Origin decides only whose ask wins
 when the item and a local spec disagree.
+An OpenSpec-lane epic owes one more check before it is treated as ready to apply: confirm its
+planning is COMPLETE — every artifact your OpenSpec schema requires exists and they agree with one
+another. If any is missing, or one contradicts another, finish the planning first; never start
+building against a partial plan. This is an obligation and not a command: pm names no OpenSpec
+invocation for it, because how to check belongs to the OpenSpec you have installed.
 <!-- END pm-conductor rules -->
 
 ## CodeRabbit
