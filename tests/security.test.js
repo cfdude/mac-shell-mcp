@@ -297,7 +297,7 @@ describe('program directory safety', () => {
     ).toThrow(/unprivileged write path/);
     // pinned by its real, safe path, it is still not resolved from the unsafe directory
     expect(() => guard.resolveProgram('head', realHead, onlyDirs([link]))).toThrow(
-      new RegExp(`lies in program directory ${link}, which is not used: unprivileged write path`),
+      `lies in program directory ${link}, which is not used: unprivileged write path`,
     );
   });
 
@@ -316,7 +316,7 @@ describe('program directory safety', () => {
     const prog = executable(base);
     chmodSync(prog, 0o777);
     expect(() => guard.resolveProgram('tool', prog, onlyDirs([base]))).toThrow(
-      new RegExp(`unprivileged write path: ${prog} is world-writable`),
+      `unprivileged write path: ${prog} is world-writable`,
     );
   });
 
@@ -354,7 +354,7 @@ describe('program directory safety', () => {
       symlinkSync('../sub/tool', join(deep, 'real', 'tool'));
       const pinned = join(safeDir, 'L', 'tool');
       expect(() => guard.resolveProgram('tool', pinned, onlyDirs([safeDir]))).toThrow(
-        new RegExp(`unprivileged write path: ${sub} is world-writable`),
+        `unprivileged write path: ${sub} is world-writable`,
       );
       // the same file pinned directly is refused too
       expect(() => guard.resolveProgram('tool', prog, onlyDirs([safeDir]))).toThrow(
