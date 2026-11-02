@@ -243,7 +243,13 @@ function firstWritePath(p: string, seen: Set<string> = new Set()): string | null
         } catch {
           return `${dirname(cur)} does not resolve`;
         }
-        why = firstWritePath(resolve(from, readlinkSync(cur)), seen);
+        let target: string;
+        try {
+          target = readlinkSync(cur);
+        } catch (e) {
+          return statFailure(cur, e);
+        }
+        why = firstWritePath(resolve(from, target), seen);
         // A link is held to the ownership rule as well, after what it names.
         why ??= st.uid !== 0 ? `${cur} is a link owned by uid ${st.uid}, not root` : null;
       } else {

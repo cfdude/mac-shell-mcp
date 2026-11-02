@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import {
   mkdtempSync,
   rmSync,
@@ -424,7 +425,7 @@ describe('program directory safety', () => {
         auditLogDir: join(base, 'audit'),
       }),
     );
-    const server = new URL('../build/index.js', import.meta.url).pathname;
+    const server = fileURLToPath(new URL('../build/index.js', import.meta.url));
     const stderr = await new Promise((resolveOut, reject) => {
       const child = spawn(process.execPath, [server], {
         env: { ...process.env, MAC_SHELL_MCP_CONFIG: config },
